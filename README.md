@@ -1,48 +1,13 @@
-# Eclipse Platform Project
+# Eclipse ~~Platform Project~~ *mieux*
 
-![Eclipse Mieux banner, hand-drawn by the maintainer](art/banner.png)
-
+<img width="3560" height="1440" alt="logo + text eclipse" src="https://github.com/user-attachments/assets/c17b7c17-fc67-41a6-8748-0d7287c6b6e8" />
 *(official branding, do not @ me)*
 
 Thanks for your interest in this project.
 
-
-## Project Description
-
-This repository contains the basis for the [Eclipse IDE](https://www.eclipse.org/eclipseide/) and a sub-repository of the [eclipse-platform](https://github.com/eclipse-platform) organization. 
-It contains multiple modules:
-
-### [eclipse.platform](https://github.com/eclipse-platform/eclipse.platform/tree/master/platform)
-Platform provides images like the splash screen.
-
-### [eclipse.resources](https://github.com/eclipse-platform/eclipse.platform/tree/master/resources)
-Resources provides Java interfaces like `IResource` and implementations of workspace, folder, file and file system abstraction.
-
-### [eclipse.runtime](https://github.com/eclipse-platform/eclipse.platform/tree/master/runtime) 
-Runtime provides Java interfaces like `IJob`, `ISchedulingRule` and implements scheduling of multithreaded jobs with exclusive access to a resource.
-
-### [eclipse.update](https://github.com/eclipse-platform/eclipse.platform/tree/master/update)
-Update provides Java interfaces like `IPlatformConfiguration`. `IPlatformConfiguration` represents the runtime configuration.
-
-### [eclipse.debug](https://github.com/eclipse-platform/eclipse.platform/tree/master/debug)
-Debug provides Java interfaces such as `ILaunchConfiguration`, `IDebugTarget`, and `IBreakpoint` to implement a language-agnostic framework for launching programs, managing breakpoints, and inspecting runtime state.
-
-### [eclipse.team](https://github.com/eclipse-platform/eclipse.platform/tree/master/team)
-Team provides Java interfaces such as `IResourceDiff` and `IDiff` to implement a framework for version control integration, resource synchronization, and two-way and three-way comparison that support merging of files and resources.
-
-### [eclipse.terminal](https://github.com/eclipse-platform/eclipse.platform/tree/master/terminal)
-Terminal provides Java interfaces such as `ITerminalConnector` and `ITerminalViewControl` to implement an embeddable terminal widget with support for local, SSH, and Telnet connections.
-
-
 ## How to Contribute
 
-Contributions are most welcome. There are many ways to contribute, from entering high quality bug reports, to contributing code or documentation changes.
-
-For a complete guide, see the [CONTRIBUTING](https://github.com/eclipse-platform/.github/blob/main/CONTRIBUTING.md) page.
-
-[![Create Eclipse Development Environment for Eclipse Platform](https://download.eclipse.org/oomph/www/setups/svg/Eclipse_Platform.svg)](
-https://www.eclipse.org/setups/installer/?url=https://raw.githubusercontent.com/eclipse-platform/eclipse.platform/master/releng/org.eclipse.platform.setup/PlatformConfiguration.setup&show=true
-"Click to open Eclipse-Installer Auto Launch or drag into your running installer")
+yea contribute whatever u want if it's good ill merge it dw
 
 ## Documentation
 
@@ -62,7 +27,9 @@ Contact the project developers via the project's "dev" list.
 
 - <https://accounts.eclipse.org/mailing-list/platform-dev>
 
-
 ## License
 
 [Eclipse Public License (EPL) 2.0](https://www.eclipse.org/legal/epl-2.0/)
+
+## Art
+![Eclipse Mieux banner, hand-drawn by the maintainer](art/banner.png)
