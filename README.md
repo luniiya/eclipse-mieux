@@ -1,4 +1,4 @@
-# Eclipse ~~Platform Project~~ **mieux**
+# Eclipse ~~Platform Project~~ <ins>**mieux**</ins>
 
 ![Eclipse Mieux logo and name](art/logo-text-eclipse.png)
 *(official branding, do not @ me)*
