@@ -1,5 +1,9 @@
 # Eclipse Platform Project
 
+![Eclipse Mieux banner, hand-drawn by the maintainer](art/banner.png)
+
+*(official branding, do not @ me)*
+
 Thanks for your interest in this project.
 
 

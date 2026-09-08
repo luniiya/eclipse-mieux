@@ -1,55 +1,7 @@
 <?xml version="1.0" encoding="UTF-8" standalone="no"?>
-<!-- Created with Inkscape (http://www.inkscape.org/) -->
-
-<svg
-   width="16"
-   height="16"
-   id="svg2"
-   version="1.1"
-   xmlns="http://www.w3.org/2000/svg"
-   xmlns:svg="http://www.w3.org/2000/svg"
-   xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
-   xmlns:cc="http://creativecommons.org/ns#"
-   xmlns:dc="http://purl.org/dc/elements/1.1/">
-  <defs
-     id="defs4" />
-  <metadata
-     id="metadata7">
-    <rdf:RDF>
-      <cc:Work
-         rdf:about="">
-        <dc:format>image/svg+xml</dc:format>
-        <dc:type
-           rdf:resource="http://purl.org/dc/dcmitype/StillImage" />
-        <dc:title />
-      </cc:Work>
-    </rdf:RDF>
-  </metadata>
-  <g
-     id="layer1"
-     style="display:inline"
-     transform="translate(0,-1036.3622)">
-    <g
-       id="g4926">
-      <path
-         transform="translate(-0.12500001,1036.331)"
-         d="m 14.75,8.1875 c 0,3.658886 -2.966114,6.625 -6.625,6.625 -3.6588865,0 -6.625,-2.966114 -6.625,-6.625 0,-3.6588865 2.9661135,-6.625 6.625,-6.625 3.658886,0 6.625,2.9661135 6.625,6.625 z"
-         id="path4880"
-         style="color:#000000;fill:#5a5194;fill-opacity:1;fill-rule:nonzero;stroke:none;stroke-width:0.44999999;marker:none;visibility:visible;display:inline;overflow:visible;enable-background:accumulate" />
-      <rect
-         y="1042.6747"
-         x="0.46875"
-         height="1.09375"
-         width="15.03125"
-         id="rect4882"
-         style="color:#000000;fill:#7386ef;fill-opacity:1;fill-rule:nonzero;stroke:none;stroke-width:0.44999999;marker:none;visibility:visible;display:inline;overflow:visible;enable-background:accumulate" />
-      <rect
-         y="1045.0184"
-         x="0.46875"
-         height="1.09375"
-         width="15.03125"
-         id="rect4882-2"
-         style="color:#000000;fill:#7386ef;fill-opacity:1;fill-rule:nonzero;stroke:none;stroke-width:0.44999999;marker:none;visibility:visible;display:inline;overflow:visible;enable-background:accumulate" />
-    </g>
-  </g>
+<svg width="16" height="16" viewBox="0 0 16 16" version="1.1"
+     xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+  <!-- eclipse-mieux: regenerated from the project's new logo art -->
+  <image x="0" y="0" width="16" height="16"
+         xlink:href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAADdUlEQVR4nFWTW2wUZRTH//PN7M7s7KXddTstbXFLt7aWbSWBRRsTRYPhQYUnEkggMfUFURN88BJNNBr0QYmXGJVA9EEUKdH4JA0+EG3AxFrqQ2+WRcqWdne7u+1eOrOzMzvffGN2KxDOw3k6/985J+f8OQDgOMBxAJ4nGD7I+gkHfjE5UKisd9jrWqn6b3pO1Q3V2ajl4NSL/w+unggBAj7CnTrBXs2ktq65jQ8H+iM7D3ncomKpNeQKmSujE+fePnPp098tWrsHwt0mffcFjlG9382VfnpsR6xnr2aWYds2cyocEZgLfrkZf8z9euq1rw8dVfWSU1fWIaQufno3ae3aRLaVlz9r3R6L7l3TcrpRYtCWHbKetmGYJlsppbShvqeOHH/um084QsBtSNGY4NvPcdRl7W5vdY2+4pZycjHJiJ61YZtAOe3AG+LR9qAIwWfpSlOH/P7Iy/HzYycnG+sDQGQzYiuZgQDvNny2KjEvDUFRWhAKNyMQkkFNIPWPDstwpJK+Sg8+/tIPTd5QQyvUk+SCZ3L+Bvfn7JtgRpXJJIiwvx1hTydkux3hQCc8CMJV9hBvq8PCAaV3T3x/7Mex09MNgGnDUELtgRb/o7BVk1BYUI0iZvKXcSOZQLWmMxcnIii3IZrooYPRHWTzfdF9ADYABRtLvFSMZYtZGNUcsyiDKHiwqamLdfYNQpb8YA4lBS2LldKCMPLblyS9dmv7nRVmZjERUhZjifQgawsHBa/UDEIEqFqZJFdnWGllFTWrxmShCR1KBEMDT0KvVnzvnHl+A3DhAsbfOLa6P2jsWdLsuUgyc5Npeokwm0F0echD3UPwS82gqLF8McUuT43iWmp64c4E4+OclswsXOrtXnrg/sBwxHI0ZpgmSeeSmJ2fZNdTM8gUlmAzG0Gfgq1dcYiC9+L8rb/vfmJvH+f+4K0tx8XslQPhoBChjFI3JwuiJYHneFStCjKFRXp9eYpO3bwqnBv7KkBtq9q4Zd0LiWtO7fT3Cx9VfC/+TE0fE12yYBharajmab6cYRVDpSGfQg88cViKbdl2pC6+xwt1CGNAPA7vs7ue2TcU+fhdxRvpNdcNOA4DT3gIvAujEyOvv3f2hRO2TeGgYYm7cRsiikA0ongeiQ7vfLhn1+GQv6U7X8pMX7x6/uQvf51NbHTmGoD/AEIRmy/CDWYLAAAAAElFTkSuQmCC"/>
 </svg>

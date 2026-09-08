@@ -60,7 +60,7 @@ mkdir -p "${DESKTOP_DIR}"
 cat > "${DESKTOP_FILE}" <<EOF
 [Desktop Entry]
 Type=Application
-Name=Eclipse
+Name=Eclipse Mieux
 Comment=Eclipse Platform SDK (Eclipse-mieux fork)
 Exec=${BIN_LINK}
 Icon=${ICON}

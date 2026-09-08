@@ -9,11 +9,21 @@ import org.eclipse.jface.text.ITextViewer;
 import org.eclipse.jface.text.ITextViewerExtension;
 import org.eclipse.jface.text.TextUtilities;
 import org.eclipse.swt.SWT;
+import org.eclipse.swt.SWTException;
+import org.eclipse.swt.custom.StyleRange;
+import org.eclipse.swt.custom.StyledText;
 import org.eclipse.swt.custom.VerifyKeyListener;
 import org.eclipse.swt.dnd.Clipboard;
 import org.eclipse.swt.dnd.TextTransfer;
 import org.eclipse.swt.dnd.Transfer;
 import org.eclipse.swt.events.VerifyEvent;
+import org.eclipse.swt.graphics.Color;
+import org.eclipse.swt.graphics.Font;
+import org.eclipse.swt.graphics.GC;
+import org.eclipse.swt.graphics.Image;
+import org.eclipse.swt.graphics.ImageGcDrawer;
+import org.eclipse.swt.graphics.Point;
+import org.eclipse.swt.widgets.Caret;
 import org.eclipse.ui.IEditorPart;
 import org.eclipse.ui.texteditor.IEditorStatusLine;
 
@@ -71,6 +81,14 @@ public class VimMode implements VerifyKeyListener {
 	private int caret; // current cursor offset, authoritative while in Visual mode
 	private int visualAnchor;
 
+	// Block-vs-line caret (see updateCaretAppearance()): the widget's own
+	// caret is left alone for Insert mode; Normal/Visual swap in a custom,
+	// full-cell, inverted-colour block caret sized to the character underneath.
+	private final StyledText styledText;
+	private final Caret insertCaret;
+	private Caret blockCaret;
+	private Image blockCaretImage;
+
 	public VimMode(IEditorPart editor, ITextViewer viewer) {
 		this.editor = editor;
 		this.viewer = viewer;
@@ -78,12 +96,24 @@ public class VimMode implements VerifyKeyListener {
 			ext.prependVerifyKeyListener(this);
 		}
 		this.caret = safeOffset(viewer.getSelectedRange().x);
+		this.styledText = viewer.getTextWidget();
+		this.insertCaret = styledText != null ? styledText.getCaret() : null;
 		updateStatusLine();
+		updateCaretAppearance();
 	}
 
 	public void dispose() {
 		if (viewer instanceof ITextViewerExtension ext) {
 			ext.removeVerifyKeyListener(this);
+		}
+		if (styledText != null && !styledText.isDisposed()) {
+			styledText.setCaret(insertCaret);
+		}
+		if (blockCaret != null && !blockCaret.isDisposed()) {
+			blockCaret.dispose();
+		}
+		if (blockCaretImage != null && !blockCaretImage.isDisposed()) {
+			blockCaretImage.dispose();
 		}
 	}
 
@@ -101,6 +131,7 @@ public class VimMode implements VerifyKeyListener {
 		} catch (RuntimeException e) {
 			VimPlugin.log(e);
 		}
+		updateCaretAppearance();
 	}
 
 	private void dispatch(VerifyEvent event) throws BadLocationException {
@@ -1040,8 +1071,94 @@ public class VimMode implements VerifyKeyListener {
 			case INSERT -> "-- INSERT --";
 			case VISUAL -> "-- VISUAL --";
 			case VISUAL_LINE -> "-- VISUAL LINE --";
-			case NORMAL -> "";
+			case NORMAL -> "-- NORMAL --";
 		};
 		status.setMessage(false, msg, null);
+	}
+
+	// ------------------------------------------------------------------
+	// Caret appearance: thin line in Insert mode (StyledText's own default
+	// caret, untouched), a solid block covering the whole character cell -
+	// with the glyph redrawn in the inverse colour on top, like a terminal -
+	// in Normal/Visual mode.
+	// ------------------------------------------------------------------
+
+	private void updateCaretAppearance() {
+		if (styledText == null || styledText.isDisposed()) {
+			return;
+		}
+		if (mode == Mode.INSERT) {
+			if (styledText.getCaret() != insertCaret) {
+				styledText.setCaret(insertCaret);
+			}
+			return;
+		}
+		Caret block = buildBlockCaret();
+		if (block != null && styledText.getCaret() != block) {
+			styledText.setCaret(block);
+		}
+	}
+
+	private Caret buildBlockCaret() {
+		int offset = safeOffset(caret);
+		int lineHeight;
+		String glyph;
+		Font font;
+		Color fg;
+		Color bg;
+		try {
+			lineHeight = styledText.getLineHeight(offset);
+			int charCount = styledText.getCharCount();
+			glyph = " ";
+			if (offset < charCount) {
+				String s = styledText.getText(offset, offset);
+				if (!s.isEmpty() && s.charAt(0) != '\n' && s.charAt(0) != '\r' && s.charAt(0) != '\t') {
+					glyph = s;
+				}
+			}
+			StyleRange range = styledText.getStyleRangeAtOffset(offset);
+			font = (range != null && range.font != null) ? range.font : styledText.getFont();
+			fg = (range != null && range.foreground != null) ? range.foreground : styledText.getForeground();
+			bg = (range != null && range.background != null) ? range.background : styledText.getBackground();
+		} catch (IllegalArgumentException | SWTException e) {
+			// offset momentarily out of sync with the widget (e.g. mid-edit) - skip this refresh
+			return blockCaret;
+		}
+
+		GC measure = new GC(styledText);
+		Point extent;
+		try {
+			measure.setFont(font);
+			extent = measure.textExtent(glyph);
+		} finally {
+			measure.dispose();
+		}
+		final int width = Math.max(extent.x, 1);
+		final int height = Math.max(lineHeight, extent.y);
+		final String drawGlyph = glyph;
+		final Font drawFont = font;
+		final Color blockColor = fg;
+		final Color textColor = bg;
+
+		ImageGcDrawer drawer = (gc, w, h) -> {
+			gc.setBackground(blockColor);
+			gc.fillRectangle(0, 0, w, h);
+			if (!drawGlyph.equals(" ")) {
+				gc.setForeground(textColor);
+				gc.setFont(drawFont);
+				gc.drawString(drawGlyph, 0, 0, false);
+			}
+		};
+
+		if (blockCaretImage != null && !blockCaretImage.isDisposed()) {
+			blockCaretImage.dispose();
+		}
+		blockCaretImage = new Image(styledText.getDisplay(), drawer, width, height);
+		if (blockCaret == null || blockCaret.isDisposed()) {
+			blockCaret = new Caret(styledText, SWT.NONE);
+		}
+		blockCaret.setImage(blockCaretImage);
+		blockCaret.setSize(width, height);
+		return blockCaret;
 	}
 }
