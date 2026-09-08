@@ -58,7 +58,7 @@ import org.eclipse.ui.texteditor.IEditorStatusLine;
 public class VimMode implements VerifyKeyListener {
 
 	private enum Mode {
-		NORMAL, INSERT, VISUAL, VISUAL_LINE
+		NORMAL, INSERT, VISUAL, VISUAL_LINE, VISUAL_BLOCK, DISABLED
 	}
 
 	private final IEditorPart editor;
@@ -135,6 +135,9 @@ public class VimMode implements VerifyKeyListener {
 	}
 
 	private void dispatch(VerifyEvent event) throws BadLocationException {
+		if (mode == Mode.DISABLED) {
+			return; // vim mode is off: don't touch the event, editor behaves like stock Eclipse
+		}
 		if (searchBuffer != null) {
 			handleSearchCapture(event);
 			return;
@@ -142,7 +145,8 @@ public class VimMode implements VerifyKeyListener {
 		switch (mode) {
 			case INSERT -> handleInsert(event);
 			case NORMAL -> handleNormal(event);
-			case VISUAL, VISUAL_LINE -> handleVisual(event);
+			case VISUAL, VISUAL_LINE, VISUAL_BLOCK -> handleVisual(event);
+			case DISABLED -> { /* unreachable, handled above */ }
 		}
 	}
 
@@ -199,12 +203,20 @@ public class VimMode implements VerifyKeyListener {
 		}
 
 		// let unmodified navigation keys and modified shortcuts pass through untouched,
-		// except the couple of Ctrl-combos Vim itself defines
+		// except the couple of Ctrl-combos Vim itself defines.
+		// NOTE: event.character under Ctrl is the raw ASCII control code (Ctrl+R -> 0x12),
+		// not the letter 'r' - keyCode is the field that stays the plain letter regardless
+		// of modifiers, so Ctrl-combos must be matched on keyCode, not character.
 		int mods = event.stateMask & (SWT.CTRL | SWT.ALT | SWT.COMMAND);
-		if (mods == SWT.CTRL && Character.toLowerCase(event.character) == 'r') {
+		if (mods == SWT.CTRL && event.keyCode == 'r') {
 			event.doit = false;
 			doOperation(ITextOperationTarget.REDO, count());
 			resetPending();
+			return;
+		}
+		if (mods == SWT.CTRL && event.keyCode == 'v') {
+			event.doit = false;
+			enterVisual(Mode.VISUAL_BLOCK);
 			return;
 		}
 		if (mods != 0) {
@@ -285,6 +297,7 @@ public class VimMode implements VerifyKeyListener {
 			case '?' -> beginSearch(false);
 			case 'n' -> repeatSearch(false);
 			case 'N' -> repeatSearch(true);
+			case ':' -> beginCommand();
 			default -> { /* unmapped key: ignore, like real Vim does */ }
 		}
 	}

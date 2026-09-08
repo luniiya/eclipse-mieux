@@ -65,6 +65,62 @@ bug turns out to be in Java editing, debugging-UI-in-JDT, or the workbench
 itself rather than platform/runtime/resources, it's in one of those other
 submodules, not this checkout.
 
+## MCP server (agent UI automation) — planned/in progress
+
+Goal: let an AI agent drive the running IDE **as text, not pixels** — no
+screenshots, ever. The agent asks for a snapshot of a window and gets back a
+structured tree of widgets (menus, buttons, checkboxes, text fields, trees,
+tables) with enough identity to act on them directly.
+
+New top-level module `mcp/` (peer to `runtime/`, `debug/`, `ua/`):
+
+- **`org.eclipse.mieux.mcp.server`** — the bundle, split so most of it has no
+  SWT/Workbench dependency:
+  - `protocol/` — JSON-RPC 2.0 + MCP messages (`initialize`, `tools/list`,
+    `tools/call`). Pure Java.
+  - `registry/` — `Tool` interface (name, description, JSON schema,
+    `execute(args)`) + `ToolRegistry`. Pure Java.
+  - `transport/` — local HTTP+JSON-RPC listener via JDK's built-in
+    `com.sun.net.httpserver` (no new external dep to drag through Tycho).
+    Bound to `127.0.0.1` only, random port, per-launch random bearer token
+    written to a local file — this is real control-surface power, so it's
+    gated by at least that much.
+  - `ui/` — the SWT-facing part, depends on `org.eclipse.swt`,
+    `org.eclipse.ui`, `org.eclipse.jface` (same cross-submodule dependency
+    pattern `debug/org.eclipse.debug.ui` already uses — SWT/Workbench source
+    lives in the aggregator's sibling submodules, not this repo, but bundles
+    here can depend on them same as always).
+    - **Widget tree walker**: walks `Display` → `Shell[]` → `Control` tree,
+      plus menu bars/context menus, into a JSON node tree (role, label,
+      enabled/visible/checked/value/selection, children). Every widget in a
+      snapshot gets an **ephemeral numeric id**, scoped to that snapshot —
+      snapshot, then act using those ids; a fresh snapshot invalidates old
+      ones. Avoids stale-widget-reference bugs.
+    - **Action tools**, all marshalled onto the SWT UI thread via
+      `Display.syncExec` (mandatory — SWT is single-threaded): `ui_click`,
+      `ui_set_text`, `ui_set_checked`, `ui_select` (combo/list/tree/table),
+      `ui_expand` (tree nodes), `ui_invoke_menu`. Plus `ui_list_windows` and
+      `ui_snapshot(shell_id, maxDepth)`.
+    - `IStartup` extension boots the HTTP server on workbench start
+      (auto-start by default — loopback + token makes that low-risk).
+  - v1 widget scope: **menus & toolbar, dialogs & wizards, trees & tables**.
+    Editor text content and full launch/debug control are explicitly out of
+    scope for v1.
+
+- **`org.eclipse.mieux.mcp.server.tests`** — plain JUnit, no display: JSON-RPC
+  parsing/error codes, tool dispatch, fake tools. Fast, no aggregator needed.
+- **`org.eclipse.mieux.mcp.server.ui.tests`** — real JUnit-plugin tests with
+  an actual `Display`/`Shell` built in-test, asserting snapshots match and
+  that click/set-text/toggle/select really mutate real widgets.
+
+**Testing reality**: the `ui`/`ui.tests` bundles depend on SWT/Workbench,
+which only exist once assembled by the aggregator — so exercising them means
+the `scripts/build.sh` flow (slow, first run clones the aggregator). The
+`protocol`/`registry` part has no such dependency and is built/tested
+standalone and fast. `ui.tests` needs a display like other UI tests here
+(Xvfb locally, per the existing "Missing Dependencies"/testing notes in
+AGENTS.md).
+
 ## Environment notes
 
 - No passwordless sudo — don't shell out to `sudo`; scripts are designed to
