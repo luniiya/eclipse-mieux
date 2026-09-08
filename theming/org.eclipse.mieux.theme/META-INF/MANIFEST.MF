@@ -1,0 +1,15 @@
+Manifest-Version: 1.0
+Bundle-ManifestVersion: 2
+Bundle-Name: %Bundle-Name
+Bundle-SymbolicName: org.eclipse.mieux.theme;singleton:=true
+Bundle-Version: 1.0.0.qualifier
+Bundle-Vendor: %Bundle-Vendor
+Bundle-Localization: plugin
+Bundle-RequiredExecutionEnvironment: JavaSE-21
+Eclipse-BundleShape: dir
+Require-Bundle: org.eclipse.e4.ui.css.swt.theme,
+ org.eclipse.ui.themes,
+ org.eclipse.e4.ui.workbench.renderers.swt,
+ org.eclipse.swt,
+ org.eclipse.jface
+Automatic-Module-Name: org.eclipse.mieux.theme

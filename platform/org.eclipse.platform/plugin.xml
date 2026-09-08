@@ -34,7 +34,7 @@
 		  </property>
 		  <property
 				name="cssTheme"
-				value="org.eclipse.e4.ui.css.theme.e4_default">
+				value="org.eclipse.mieux.theme.lilac">
 		  </property>
 		  <property
 				name="applicationCSSResources"

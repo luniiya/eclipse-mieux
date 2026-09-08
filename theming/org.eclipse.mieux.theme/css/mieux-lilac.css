@@ -1,0 +1,63 @@
+/*
+ * Mieux Lilac -- a pastel, GTK-leaning workbench theme.
+ *
+ * Built on top of the platform's own default GTK theme rather than
+ * reinventing every selector -- we only override the bits that carry the
+ * palette (backgrounds, tab colors/keylines, fonts) and let everything else
+ * (dialogs, wizards, preference pages, etc.) keep working as shipped.
+ */
+@import url("platform:/plugin/org.eclipse.ui.themes/css/e4_default_gtk.css");
+
+/* ---- Palette -----------------------------------------------------------
+ * base        #F4F1FA  -- window / trim / toolbar background
+ * panel       #FAF8FD  -- view/tree/table background
+ * surface     #FFFFFF  -- editor area background
+ * tab-active  #FFFFFF -> #EFE7FA  -- selected tab gradient
+ * tab-idle    #E9E3F5  -- unselected tab fill
+ * accent      #B9A6E0  -- keylines / outline
+ * accent-dark #8A6FD1  -- selection / links
+ * ------------------------------------------------------------------------ */
+
+.MTrimmedWindow,
+.MTrimBar,
+.MTrimBar#org-eclipse-ui-main-toolbar {
+	background-color: #F4F1FA;
+}
+
+.MPartStack {
+	swt-tab-renderer: url('bundleclass://org.eclipse.mieux.theme/org.eclipse.mieux.theme.RoundedTabRenderer');
+	swt-selected-tab-fill: #FFFFFF #EFE7FA 100% 100%;
+	swt-unselected-tabs-color: #E9E3F5;
+	swt-outer-keyline-color: #D8CDEF;
+	swt-inner-keyline-color: #FFFFFF;
+	swt-tab-outline: #C9B8ED;
+	swt-unselected-hot-tab-color-background: #F0EBFA;
+}
+
+.MPartStack.active {
+	swt-selected-tab-fill: #FFFFFF #E7DEF8 100% 100%;
+}
+
+.View Composite,
+.View Tree,
+.View Table,
+.View ToolBar {
+	background-color: #FAF8FD;
+}
+
+.View Tree:selected,
+.View Table:selected {
+	background-color: #E7DEF8;
+}
+
+Composite.MArea {
+	background-color: #FFFFFF;
+}
+
+.View ToolBar ToolItem {
+	background-color: #F0EBFA;
+}
+
+* {
+	font-family: 'Cantarell', 'Noto Sans', sans-serif;
+}

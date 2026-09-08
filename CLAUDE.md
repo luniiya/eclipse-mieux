@@ -58,6 +58,9 @@ Run `eclipse-mieux` to launch the GUI directly.
 - `terminal/` — terminal view
 - `platform/org.eclipse.sdk` — the SDK feature/branding (product id
   `org.eclipse.sdk.ide`, icons, splash, about text)
+- `vim/org.eclipse.mieux.vim` — native vim mode for text editors (modal
+  editing, status-bar mode indicator), started via `org.eclipse.ui.startup`
+- `theming/org.eclipse.mieux.theme` — see "Theming" section below
 
 The rest of what actually ends up in the built IDE (JDT, PDE, SWT, the
 workbench UI) lives in sibling repos under the aggregator, not here — if a
@@ -120,6 +123,37 @@ the `scripts/build.sh` flow (slow, first run clones the aggregator). The
 standalone and fast. `ui.tests` needs a display like other UI tests here
 (Xvfb locally, per the existing "Missing Dependencies"/testing notes in
 AGENTS.md).
+
+## Theming
+
+Custom E4 CSS workbench theme, `org.eclipse.mieux.theme.lilac` ("Mieux
+Lilac"): pastel lilac/white palette, Cantarell UI font, JetBrainsMono Nerd
+Font Mono as the default editor font, rounded-top editor/view tabs. Set as
+the default via the `cssTheme` product property in both
+`platform/org.eclipse.sdk/plugin.xml` and
+`platform/org.eclipse.platform/plugin.xml`; switchable at runtime via
+Window > Preferences > General > Appearance.
+
+- The E4 CSS engine (`org.eclipse.e4.ui.css.swt.theme`, lives in the `ui`
+  submodule, not this repo) has **no `border-radius` property** — confirmed
+  by grepping its source. `theming/org.eclipse.mieux.theme`'s
+  `css/mieux-lilac.css` `@import`s the platform's own
+  `e4_default_gtk.css` and overrides just the palette-carrying selectors
+  (trim/toolbar/view backgrounds, tab fill/keyline/outline colors, fonts)
+  rather than rebuilding the whole stylesheet.
+- Rounded tab corners come from `RoundedTabRenderer`
+  (`theming/org.eclipse.mieux.theme/src/.../RoundedTabRenderer.java`), a
+  `CTabRendering` subclass registered via the CSS `swt-tab-renderer`
+  property. `CTabRendering`'s own tab-fill/outline colors are
+  package-private, so rather than reimplement tab painting (text, icon,
+  close button, dirty-indicator, hot/inactive alpha blending) the renderer
+  clips the paint area to a rounded-top `Path` and delegates to
+  `super.draw(...)` for everything else — corners outside the path just get
+  cut away.
+- Out of scope for this pass: the toolbar/editor icon language (lives in the
+  `ui`/`jdt`/`pde` submodules, not this checkout) and anything at the
+  desktop/window-manager level (rounded window chrome, custom title bar,
+  widgets) — that's Hyprland/eww territory, not something SWT/E4 can draw.
 
 ## Environment notes
 

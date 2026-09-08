@@ -9,7 +9,7 @@ import org.eclipse.swt.events.KeyAdapter;
 import org.eclipse.swt.events.KeyEvent;
 import org.eclipse.swt.graphics.Rectangle;
 import org.eclipse.swt.layout.FillLayout;
-import org.eclipse.swt.widgets.Control;
+import org.eclipse.swt.widgets.Scrollable;
 import org.eclipse.swt.widgets.Shell;
 import org.eclipse.swt.widgets.Text;
 
@@ -20,12 +20,12 @@ import org.eclipse.swt.widgets.Text;
  */
 final class CommandPopup {
 
-	private final Control host;
+	private final Scrollable host;
 	private final Shell shell;
 	private final Text text;
 	private Consumer<String> onExecute;
 
-	CommandPopup(Control host) {
+	CommandPopup(Scrollable host) {
 		this.host = host;
 
 		shell = new Shell(host.getShell(), SWT.NO_TRIM | SWT.ON_TOP);

@@ -13,7 +13,7 @@ import org.eclipse.swt.graphics.GC;
 import org.eclipse.swt.graphics.Point;
 import org.eclipse.swt.graphics.Rectangle;
 import org.eclipse.swt.widgets.Canvas;
-import org.eclipse.swt.widgets.Control;
+import org.eclipse.swt.widgets.Scrollable;
 import org.eclipse.swt.widgets.Display;
 import org.eclipse.swt.widgets.Shell;
 
@@ -30,7 +30,7 @@ final class ModeBadge {
 		void onDoubleClick();
 	}
 
-	private final Control host;
+	private final Scrollable host;
 	private final Shell shell;
 	private final Canvas canvas;
 	private final Map<VimMode.Mode, Color> colors = new EnumMap<>(VimMode.Mode.class);
@@ -38,7 +38,7 @@ final class ModeBadge {
 	private String label = "NORMAL";
 	private Color current;
 
-	ModeBadge(Control host, ToggleListener listener) {
+	ModeBadge(Scrollable host, ToggleListener listener) {
 		this.host = host;
 		Display display = host.getDisplay();
 
