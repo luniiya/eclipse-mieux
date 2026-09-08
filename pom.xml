@@ -68,6 +68,7 @@
     <module>debug</module>
     <module>ua</module>
     <module>terminal/</module>
+    <module>vim/org.eclipse.mieux.vim</module>
   </modules>
   <build>
     <pluginManagement>

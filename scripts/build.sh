@@ -55,16 +55,36 @@ else
     ln -s "${REPO_ROOT}" "${PLATFORM_LINK}"
 fi
 
-MVN_ARGS=(clean verify --threads 1C)
+echo "==> JAVA_HOME=${JAVA_HOME}"
+echo "==> MAVEN_OPTS=${MAVEN_OPTS}"
+cd "${AGGREGATOR_DIR}"
+
+# NOTE: we tried narrowing target-platform-configuration's <environments> to
+# just linux/gtk/x86_64 to skip other platforms' downloads - don't do that,
+# org.eclipse.equinox.executable's package-feature step needs ALL platforms'
+# launcher fragments present in the resolved target platform regardless of
+# which one we're packaging for. The earlier download timeouts were network
+# congestion (12 cores x --threads 1C hammering download.eclipse.org at
+# once), not a real unreachability - --threads below is tuned down instead.
+
+# eclipse.platform's pom.xml resolves its parent via relativePath
+# (../eclipse-platform-parent). That's correct for a normal git-submodule
+# checkout, but our eclipse.platform is a symlink OUT of the aggregator tree,
+# so Maven resolves relativePath against its real (canonical) location and
+# gets the wrong answer. Maven falls back to the local repo when relativePath
+# fails - so pre-install the prereq POMs there first, same as upstream CI's
+# "deploy parent pom" stage does (for the same underlying reason).
+echo "==> Pre-installing eclipse-platform-parent + prereqs to the local Maven repo"
+mvn -f eclipse-platform-parent/pom.xml clean install -q
+mvn -f eclipse.platform.releng.prereqs.sdk/pom.xml clean install -q
+
+MVN_ARGS=(clean verify --threads 4)
 if [[ "${WITH_TESTS}" -eq 0 ]]; then
     MVN_ARGS+=(-DskipTests)
 fi
 
-echo "==> JAVA_HOME=${JAVA_HOME}"
-echo "==> MAVEN_OPTS=${MAVEN_OPTS}"
 echo "==> Building in ${AGGREGATOR_DIR}"
 echo "    (upstream quotes ~10-20 min without tests; first run / this machine may take longer)"
 echo "==> mvn ${MVN_ARGS[*]} ${EXTRA_ARGS[*]:-}"
 
-cd "${AGGREGATOR_DIR}"
 exec mvn "${MVN_ARGS[@]}" "${EXTRA_ARGS[@]}"

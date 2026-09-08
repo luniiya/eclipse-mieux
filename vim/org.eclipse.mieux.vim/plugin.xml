@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<?eclipse version="3.4"?>
+<!--
+    eclipse-mieux native Vim mode.
+    Registers itself as an early-startup hook so it attaches to every text
+    editor in every workbench window without requiring the user to install
+    anything - it ships baked into the IDE.
+ -->
+<plugin>
+   <extension
+         id="org.eclipse.mieux.vim.startup"
+         point="org.eclipse.ui.startup">
+      <startup class="org.eclipse.mieux.vim.VimStartup"/>
+   </extension>
+</plugin>
