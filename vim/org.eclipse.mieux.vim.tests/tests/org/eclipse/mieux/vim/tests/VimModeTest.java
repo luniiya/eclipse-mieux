@@ -92,6 +92,12 @@ class VimModeTest {
     private void openWith(String text) {
         IDocument doc = new Document(text);
         viewer.setDocument(doc);
+        // In the real product, AbstractTextEditor calls this when the editor
+        // becomes the active part - it's what actually connects the undo
+        // manager (TextViewer.setUndoManager alone just stashes the field).
+        // Without it, u/Ctrl+R would silently no-op here even though real
+        // usage always has it wired up.
+        viewer.activatePlugins();
         recorder = new FakeEditorPart.Recorder();
         statusLine = new FakeEditorPart.FakeStatusLine();
         IEditorPart editor = FakeEditorPart.create(viewer, statusLine, recorder);

@@ -998,7 +998,12 @@ public class VimMode implements VerifyKeyListener {
 		if (lastSearch == null) {
 			return;
 		}
-		runSearch(lastSearch, reversed != searchForward ? !searchForward : searchForward);
+		// 'n' repeats in the original direction, 'N' reverses it - i.e.
+		// forward == XOR(reversed, searchForward). (The previous ternary
+		// here computed the wrong thing for two of the four cases - e.g.
+		// 'n' after a forward '/' search would search backward instead of
+		// continuing forward.)
+		runSearch(lastSearch, reversed != searchForward);
 	}
 
 	private void runSearch(String pattern, boolean forward) {
@@ -1301,12 +1306,12 @@ public class VimMode implements VerifyKeyListener {
 	// ------------------------------------------------------------------
 
 	private void copyToClipboard(String text) {
-		Clipboard clipboard = VimPlugin.getDefault().getClipboard();
+		Clipboard clipboard = VimPlugin.getClipboard();
 		clipboard.setContents(new Object[] { text }, new Transfer[] { TextTransfer.getInstance() });
 	}
 
 	private String getClipboardText() {
-		Clipboard clipboard = VimPlugin.getDefault().getClipboard();
+		Clipboard clipboard = VimPlugin.getClipboard();
 		Object contents = clipboard.getContents(TextTransfer.getInstance());
 		return contents instanceof String s ? s : null;
 	}

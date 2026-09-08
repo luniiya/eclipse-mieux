@@ -15,8 +15,12 @@
  * tab-active  #FFFFFF -> #EFE7FA  -- selected tab gradient
  * tab-idle    #E9E3F5  -- unselected tab fill
  * accent      #B9A6E0  -- keylines / outline
- * accent-dark #8A6FD1  -- selection / links
+ * accent-dark #8A6FD1  -- links
  * ------------------------------------------------------------------------ */
+
+Link {
+	swt-link-foreground-color: #8A6FD1;
+}
 
 .MTrimmedWindow,
 .MTrimBar,
@@ -43,11 +47,6 @@
 .View Table,
 .View ToolBar {
 	background-color: #FAF8FD;
-}
-
-.View Tree:selected,
-.View Table:selected {
-	background-color: #E7DEF8;
 }
 
 Composite.MArea {

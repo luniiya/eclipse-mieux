@@ -18,7 +18,7 @@ public class VimPlugin extends AbstractUIPlugin {
 	public static final String PLUGIN_ID = "org.eclipse.mieux.vim"; //$NON-NLS-1$
 
 	private static VimPlugin instance;
-	private Clipboard clipboard;
+	private static Clipboard clipboard;
 
 	@Override
 	public void start(BundleContext context) throws Exception {
@@ -42,9 +42,12 @@ public class VimPlugin extends AbstractUIPlugin {
 
 	/**
 	 * The shared system clipboard (DND.CLIPBOARD), lazily created on the
-	 * display thread.
+	 * display thread. Deliberately static rather than routed through
+	 * {@link #getDefault()}: it only needs a {@link Display}, not a running
+	 * activator/{@code BundleContext}, so callers can reach it even before
+	 * (or without) {@code start(BundleContext)} having run.
 	 */
-	public synchronized Clipboard getClipboard() {
+	public static synchronized Clipboard getClipboard() {
 		if (clipboard == null || clipboard.isDisposed()) {
 			clipboard = new Clipboard(Display.getDefault());
 		}
@@ -54,6 +57,10 @@ public class VimPlugin extends AbstractUIPlugin {
 	public static void log(Throwable t) {
 		if (instance != null) {
 			instance.getLog().log(new Status(IStatus.ERROR, PLUGIN_ID, t.getMessage(), t));
+		} else {
+			// No running activator (e.g. under test outside OSGi) - don't
+			// swallow the error silently.
+			t.printStackTrace();
 		}
 	}
 }
