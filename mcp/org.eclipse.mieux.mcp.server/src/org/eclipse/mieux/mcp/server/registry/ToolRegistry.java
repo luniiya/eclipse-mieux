@@ -54,9 +54,19 @@ public class ToolRegistry {
 			return Json.object("content", Json.array(Json.object("type", "text", "text", text)), "isError",
 					Boolean.FALSE);
 		} catch (ToolExecutionException e) {
-			return Json.object("content", Json.array(Json.object("type", "text", "text", e.getMessage())), "isError",
-					Boolean.TRUE);
+			return errorResult(e.getMessage());
+		} catch (RuntimeException e) {
+			// A tool implementation bug (NPE, etc.) must not look like a malformed
+			// request to the caller - it's this specific tool call that failed, not
+			// the transport/protocol layer, so report it the same way a deliberate
+			// ToolExecutionException would be reported.
+			return errorResult(name + " failed: " + e);
 		}
+	}
+
+	private static Map<String, Object> errorResult(String message) {
+		return Json.object("content", Json.array(Json.object("type", "text", "text", message)), "isError",
+				Boolean.TRUE);
 	}
 
 	/** Thrown by {@link #call(String, Map)} when the tool name is not registered. */

@@ -1,6 +1,7 @@
 package org.eclipse.mieux.mcp.server.tests;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.IOException;
@@ -49,11 +50,36 @@ public class HttpMcpServerTest {
 
 	@Test
 	public void bindsOnlyToLoopback() throws IOException {
-		assertTrue(InetAddress.getLoopbackAddress().isLoopbackAddress());
-		// A connection attempt on the loopback address must succeed - proves the
-		// server is actually listening there rather than on a wildcard/other address.
+		// Assert the actual bound address directly, not just "some connection
+		// worked" - a wildcard bind (0.0.0.0) would also let loopback connections
+		// through, so that alone wouldn't prove anything.
+		assertTrue(server.getBoundAddress().isLoopbackAddress());
+
 		HttpURLConnection connection = post("/mcp", TOKEN, "{}");
 		assertTrue(connection.getResponseCode() > 0);
+	}
+
+	@Test
+	public void isRunningReflectsLifecycle() {
+		assertTrue(server.isRunning());
+		server.close();
+		assertFalse(server.isRunning());
+	}
+
+	@Test
+	public void malformedContentLengthGetsACleanBadRequestResponse() throws IOException {
+		// Below the HttpURLConnection level: send a hand-written request with a
+		// non-numeric Content-Length, which must not just drop the connection.
+		try (java.net.Socket socket = new java.net.Socket(InetAddress.getLoopbackAddress(), port)) {
+			String request = "POST /mcp HTTP/1.1\r\n" + "Authorization: Bearer " + TOKEN + "\r\n"
+					+ "Content-Length: not-a-number\r\n" + "\r\n";
+			socket.getOutputStream().write(request.getBytes(StandardCharsets.UTF_8));
+			socket.getOutputStream().flush();
+			socket.setSoTimeout(5000);
+			String statusLine = new java.io.BufferedReader(
+					new java.io.InputStreamReader(socket.getInputStream(), StandardCharsets.UTF_8)).readLine();
+			assertTrue(statusLine != null && statusLine.contains("400"), "expected a 400 status, got: " + statusLine);
+		}
 	}
 
 	@Test

@@ -34,6 +34,9 @@ public class McpMessageHandler {
 		Object id = null;
 		boolean isNotification = false;
 		try {
+			if (rawRequest == null) {
+				return Json.write(errorResponse(null, JsonRpcException.INVALID_REQUEST, "Request body is empty"));
+			}
 			Object parsed;
 			try {
 				parsed = Json.parse(rawRequest);
@@ -96,6 +99,9 @@ public class McpMessageHandler {
 			throw new JsonRpcException(JsonRpcException.INVALID_PARAMS, "\"params.name\" is required");
 		}
 		Object argumentsValue = params.get("arguments");
+		if (argumentsValue != null && !(argumentsValue instanceof Map)) {
+			throw new JsonRpcException(JsonRpcException.INVALID_PARAMS, "\"params.arguments\" must be an object");
+		}
 		Map<String, Object> arguments = argumentsValue == null ? Map.of() : Json.asObject(argumentsValue);
 		try {
 			return registry.call(name, arguments);

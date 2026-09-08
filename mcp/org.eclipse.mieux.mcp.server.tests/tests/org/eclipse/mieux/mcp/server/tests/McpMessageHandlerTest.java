@@ -71,6 +71,23 @@ public class McpMessageHandlerTest {
 	}
 
 	@Test
+	public void toolsCallWithNonObjectArgumentsReturnsInvalidParamsError() {
+		ToolRegistry registry = new ToolRegistry();
+		registry.register(new FakeTool("echo", args -> "ok"));
+		McpMessageHandler handler = newHandler(registry);
+
+		// "arguments" is an array here, not an object - must be rejected as a
+		// client-input problem (INVALID_PARAMS), not surface as a generic
+		// INTERNAL_ERROR from Json.asObject() blowing up unhandled.
+		String response = handler.handle(Json.write(Json.object("jsonrpc", "2.0", "id", 7L, "method", "tools/call",
+				"params", Json.object("name", "echo", "arguments", Json.array("not", "an", "object")))));
+
+		Map<String, Object> parsed = parseObject(response);
+		Map<String, Object> error = (Map<String, Object>) parsed.get("error");
+		assertEquals(Long.valueOf(JsonRpcException.INVALID_PARAMS), error.get("code"));
+	}
+
+	@Test
 	public void toolsCallOnUnknownToolReturnsInvalidParamsError() {
 		McpMessageHandler handler = newHandler(new ToolRegistry());
 

@@ -18,10 +18,21 @@ public class FakeTool implements Tool {
 		this.body = body;
 	}
 
-	/** A fake tool that always fails with {@code message}. */
+	/** A fake tool that always fails with {@code message}, via {@link ToolExecutionException}. */
 	public static FakeTool failing(String name, String message) {
 		return new FakeTool(name, args -> {
 			throw new FakeFailure(message);
+		});
+	}
+
+	/**
+	 * A fake tool that "crashes" with a raw, unchecked exception - simulating a
+	 * buggy tool implementation, as opposed to {@link #failing} which reports a
+	 * deliberate, well-behaved failure via {@link ToolExecutionException}.
+	 */
+	public static FakeTool crashing(String name) {
+		return new FakeTool(name, args -> {
+			throw new IllegalStateException("simulated bug in " + name);
 		});
 	}
 

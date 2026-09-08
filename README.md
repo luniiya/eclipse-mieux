@@ -1,6 +1,6 @@
 # Eclipse ~~Platform Project~~ **mieux**
 
-![Eclipse Mieux logo and name](art/logo + text eclipse.png)
+![Eclipse Mieux logo and name](art/logo-text-eclipse.png)
 *(official branding, do not @ me)*
 
 Thanks for your interest in this project.

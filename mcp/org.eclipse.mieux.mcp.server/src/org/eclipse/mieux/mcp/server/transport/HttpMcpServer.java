@@ -81,6 +81,14 @@ public class HttpMcpServer implements Closeable {
 		return serverSocket.getLocalPort();
 	}
 
+	/** The address this server is actually listening on - always loopback. */
+	public InetAddress getBoundAddress() {
+		if (serverSocket == null) {
+			throw new IllegalStateException("Not started");
+		}
+		return serverSocket.getInetAddress();
+	}
+
 	public boolean isRunning() {
 		return running;
 	}
@@ -91,8 +99,12 @@ public class HttpMcpServer implements Closeable {
 				Socket socket = serverSocket.accept();
 				connectionExecutor.execute(() -> handleConnection(socket));
 			} catch (IOException e) {
-				// Expected once close() tears down the socket underneath us.
-				break;
+				if (!running) {
+					// Expected: close() tore down the listening socket underneath us.
+					break;
+				}
+				// A transient accept() failure must not permanently deafen the
+				// server while isRunning() still reports true - keep serving.
 			}
 		}
 	}
@@ -102,10 +114,18 @@ public class HttpMcpServer implements Closeable {
 			socket.setSoTimeout(10_000);
 			InputStream in = socket.getInputStream();
 			OutputStream out = socket.getOutputStream();
-			HttpRequest request = HttpRequest.read(in);
+			HttpRequest request;
+			try {
+				request = HttpRequest.read(in);
+			} catch (IOException e) {
+				writeResponse(out, 400, "Bad Request", "text/plain",
+						("bad request: " + e.getMessage()).getBytes(StandardCharsets.UTF_8));
+				return;
+			}
 			respond(out, request);
 		} catch (IOException e) {
-			// Best-effort: client disconnected, sent garbage, or timed out.
+			// Best-effort: client disconnected or the connection timed out while we
+			// were writing the response - nothing left to do at that point.
 		}
 	}
 
@@ -115,7 +135,7 @@ public class HttpMcpServer implements Closeable {
 			return;
 		}
 		String authHeader = request.headers.getOrDefault("authorization", "");
-		if (!("Bearer " + token).equals(authHeader)) {
+		if (!isValidToken(authHeader)) {
 			writeResponse(out, 401, "Unauthorized", "text/plain", "unauthorized".getBytes(StandardCharsets.UTF_8));
 			return;
 		}
@@ -128,6 +148,17 @@ public class HttpMcpServer implements Closeable {
 			return;
 		}
 		writeResponse(out, 200, "OK", "application/json", responseJson.getBytes(StandardCharsets.UTF_8));
+	}
+
+	private boolean isValidToken(String authHeader) {
+		String expected = "Bearer " + token;
+		// Constant-time comparison: this token gates full UI control of the IDE,
+		// so a plain String.equals() (which short-circuits on the first mismatched
+		// byte) is worth avoiding even though the practical exposure - another
+		// local process guessing a 256-bit token via timing - is already remote.
+		byte[] expectedBytes = expected.getBytes(StandardCharsets.UTF_8);
+		byte[] actualBytes = authHeader.getBytes(StandardCharsets.UTF_8);
+		return java.security.MessageDigest.isEqual(expectedBytes, actualBytes);
 	}
 
 	private void writeResponse(OutputStream out, int status, String statusText, String contentType, byte[] body)
@@ -157,6 +188,12 @@ public class HttpMcpServer implements Closeable {
 	}
 
 	private static final class HttpRequest {
+		// This server only ever exchanges small JSON-RPC messages, so a generous
+		// but finite cap is purely a defensive backstop - it turns "a rogue local
+		// process sends a huge/garbage Content-Length" into a clean 400 instead of
+		// a multi-megabyte allocation or a hung read.
+		private static final int MAX_BODY_BYTES = 16 * 1024 * 1024;
+
 		String method = "";
 		String path = "";
 		final Map<String, String> headers = new HashMap<>();
@@ -186,7 +223,15 @@ public class HttpMcpServer implements Closeable {
 				String value = line.substring(colon + 1).trim();
 				request.headers.put(name, value);
 				if ("content-length".equals(name)) {
-					contentLength = Integer.parseInt(value);
+					try {
+						contentLength = Integer.parseInt(value);
+					} catch (NumberFormatException e) {
+						throw new IOException("Invalid Content-Length: " + value, e);
+					}
+					if (contentLength > MAX_BODY_BYTES) {
+						throw new IOException("Content-Length " + contentLength + " exceeds the " + MAX_BODY_BYTES
+								+ " byte limit");
+					}
 				}
 			}
 			if (contentLength > 0) {

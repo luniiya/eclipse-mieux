@@ -73,4 +73,22 @@ public class ToolRegistryTest {
 		assertEquals("kaboom", firstBlock.get("text"));
 		assertFalse(content.isEmpty());
 	}
+
+	@Test
+	public void aToolThatThrowsAnUncheckedExceptionStillProducesAnErrorResultNotACrash()
+			throws ToolRegistry.UnknownToolException {
+		ToolRegistry registry = new ToolRegistry();
+		registry.register(FakeTool.crashing("buggy"));
+
+		// Must not propagate out of call() - a bug in one tool's implementation is
+		// this tool call's problem, not a reason to fail the whole request.
+		Map<String, Object> result = registry.call("buggy", Map.of());
+
+		assertEquals(Boolean.TRUE, result.get("isError"));
+		@SuppressWarnings("unchecked")
+		List<Object> content = (List<Object>) result.get("content");
+		@SuppressWarnings("unchecked")
+		Map<String, Object> firstBlock = (Map<String, Object>) content.get(0);
+		assertTrue(((String) firstBlock.get("text")).contains("buggy"));
+	}
 }
