@@ -1,5 +1,11 @@
 package org.eclipse.mieux.vim;
 
+import java.util.ArrayList;
+import java.util.List;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+
+import org.eclipse.core.runtime.NullProgressMonitor;
 import org.eclipse.jface.text.BadLocationException;
 import org.eclipse.jface.text.FindReplaceDocumentAdapter;
 import org.eclipse.jface.text.IDocument;
@@ -25,6 +31,8 @@ import org.eclipse.swt.graphics.ImageGcDrawer;
 import org.eclipse.swt.graphics.Point;
 import org.eclipse.swt.widgets.Caret;
 import org.eclipse.ui.IEditorPart;
+import org.eclipse.ui.ISaveablePart;
+import org.eclipse.ui.IWorkbenchPage;
 import org.eclipse.ui.texteditor.IEditorStatusLine;
 
 /**
@@ -48,16 +56,24 @@ import org.eclipse.ui.texteditor.IEditorStatusLine;
  * <p>
  * Covers: motions h j k l 0 ^ $ w b e gg G f/F/t/T (+ ; ,), operators
  * d c y combined with a motion or doubled (dd/cc/yy), x X D C Y s S r ~,
- * u / Ctrl+R (undo/redo), i I a A o O (enter Insert), v V (Visual/Visual
- * Line) with d/c/y/x/~ acting on the selection, p/P (system-clipboard
- * paste), and / ? n N (search via {@link FindReplaceDocumentAdapter}).
- * Count prefixes (e.g. 3dw, 5j) are supported throughout. Not implemented:
- * named registers (everything is the system clipboard), macros, the "."
- * repeat command, and visual-block mode.
+ * u / Ctrl+R (undo/redo), i I a A o O (enter Insert), v V Ctrl+V (Visual /
+ * Visual Line / Visual Block, the last via SWT's native
+ * {@code StyledText.setBlockSelection}) with d/c/y/x/~ acting on the
+ * selection (block-mode d/c/y/~ act per-column across the block's lines),
+ * p/P (system-clipboard paste), / ? n N (search via
+ * {@link FindReplaceDocumentAdapter}), and a small set of ":" ex-commands
+ * (see {@link #executeExCommand}) entered through a Spotlight-style popup.
+ * Count prefixes (e.g. 3dw, 5j) are supported throughout. A rounded-rectangle
+ * badge in the bottom-right corner of the editor shows the current mode;
+ * double-clicking it toggles a real {@link Mode#DISABLED} mode in which the
+ * editor behaves exactly like stock Eclipse. Not implemented: named
+ * registers (everything is the system clipboard), macros, the "." repeat
+ * command, and block-mode I/A (block-insert replay across lines).
  */
 public class VimMode implements VerifyKeyListener {
 
-	private enum Mode {
+	// package-private so ModeBadge (same package) can reference it directly
+	enum Mode {
 		NORMAL, INSERT, VISUAL, VISUAL_LINE, VISUAL_BLOCK, DISABLED
 	}
 
@@ -89,6 +105,13 @@ public class VimMode implements VerifyKeyListener {
 	private Caret blockCaret;
 	private Image blockCaretImage;
 
+	// Rounded-rectangle mode indicator (bottom-right of the editor) and the
+	// centred ":" command popup. Both are null if the editor has no widget
+	// to attach to (defensive - viewer.getTextWidget() can theoretically
+	// return null for some ITextViewer implementations).
+	private final ModeBadge modeBadge;
+	private final CommandPopup commandPopup;
+
 	public VimMode(IEditorPart editor, ITextViewer viewer) {
 		this.editor = editor;
 		this.viewer = viewer;
@@ -98,6 +121,8 @@ public class VimMode implements VerifyKeyListener {
 		this.caret = safeOffset(viewer.getSelectedRange().x);
 		this.styledText = viewer.getTextWidget();
 		this.insertCaret = styledText != null ? styledText.getCaret() : null;
+		this.modeBadge = styledText != null ? new ModeBadge(styledText, this::toggleDisabled) : null;
+		this.commandPopup = styledText != null ? new CommandPopup(styledText) : null;
 		updateStatusLine();
 		updateCaretAppearance();
 	}
@@ -115,6 +140,29 @@ public class VimMode implements VerifyKeyListener {
 		if (blockCaretImage != null && !blockCaretImage.isDisposed()) {
 			blockCaretImage.dispose();
 		}
+		if (modeBadge != null) {
+			modeBadge.dispose();
+		}
+		if (commandPopup != null) {
+			commandPopup.dispose();
+		}
+	}
+
+	/** Double-click on the mode badge: toggle Vim mode fully on/off. */
+	private void toggleDisabled() {
+		if (mode == Mode.DISABLED) {
+			mode = Mode.NORMAL;
+			caret = safeOffset(viewer.getSelectedRange().x);
+		} else {
+			if (mode == Mode.VISUAL_BLOCK && styledText != null && !styledText.isDisposed()) {
+				styledText.setBlockSelection(false);
+			}
+			resetPending();
+			searchBuffer = null;
+			mode = Mode.DISABLED;
+		}
+		updateStatusLine();
+		updateCaretAppearance();
 	}
 
 	// ------------------------------------------------------------------
@@ -379,6 +427,9 @@ public class VimMode implements VerifyKeyListener {
 	private void enterVisual(Mode visualMode) {
 		visualAnchor = caret;
 		mode = visualMode;
+		if (visualMode == Mode.VISUAL_BLOCK && styledText != null && !styledText.isDisposed()) {
+			styledText.setBlockSelection(true);
+		}
 		updateSelection();
 		updateStatusLine();
 	}
@@ -388,20 +439,42 @@ public class VimMode implements VerifyKeyListener {
 
 		if (event.keyCode == SWT.ESC) {
 			event.doit = false;
-			caret = Math.min(caret, visualAnchor == caret ? caret : caret);
 			setCaret(caret);
 			enterNormal();
 			return;
 		}
 		int mods = event.stateMask & (SWT.CTRL | SWT.ALT | SWT.COMMAND);
+		if (mods == SWT.CTRL && event.keyCode == 'v') {
+			// Ctrl+V from within Visual toggles Visual Block on/off, keeping the anchor.
+			event.doit = false;
+			if (mode == Mode.VISUAL_BLOCK) {
+				enterNormalFromVisual();
+			} else {
+				mode = Mode.VISUAL_BLOCK;
+				if (styledText != null && !styledText.isDisposed()) {
+					styledText.setBlockSelection(true);
+				}
+				updateSelection();
+				updateStatusLine();
+			}
+			return;
+		}
 		if (mods != 0) {
 			return;
 		}
 		char c = event.character;
 		if (c == 0) {
-			if (isPureNavigationKey(event.keyCode)) {
+			// arrows/Home/End need to keep driving the Vim-managed selection - if we just
+			// let them fall through, StyledText's own caret-move-without-shift behaviour
+			// silently collapses whatever selection we just set up.
+			int target = motionForKeyCode(doc, event.keyCode);
+			if (target < 0) {
 				return;
 			}
+			event.doit = false;
+			caret = target;
+			updateSelection();
+			resetPending();
 			return;
 		}
 		event.doit = false;
@@ -424,26 +497,79 @@ public class VimMode implements VerifyKeyListener {
 			case 'e' -> { caret = motionWordEnd(doc, count(), false); updateSelection(); resetPending(); }
 			case 'G' -> { caret = firstNonBlank(doc, doc.getNumberOfLines() - 1); updateSelection(); resetPending(); }
 			case 'o' -> { int t = visualAnchor; visualAnchor = caret; caret = t; updateSelection(); }
-			case 'v' -> enterNormalFromVisual(false);
-			case 'V' -> { mode = Mode.VISUAL_LINE; updateSelection(); updateStatusLine(); }
-			case 'd', 'x' -> { deleteSelection(doc); enterNormalFromVisual(true); }
-			case 'c', 's' -> { int start = selectionStart(); deleteSelection(doc); enterInsert(start); }
-			case 'y' -> { yankSelection(doc); caret = selectionStart(); enterNormalFromVisual(true); }
-			case '~' -> { toggleCaseSelection(doc); enterNormalFromVisual(true); }
+			case 'v' -> enterNormalFromVisual();
+			case 'V' -> {
+				if (mode == Mode.VISUAL_BLOCK && styledText != null && !styledText.isDisposed()) {
+					styledText.setBlockSelection(false);
+				}
+				mode = Mode.VISUAL_LINE;
+				updateSelection();
+				updateStatusLine();
+			}
+			case 'd', 'x' -> {
+				if (mode == Mode.VISUAL_BLOCK) {
+					deleteBlockSelection(doc);
+				} else {
+					deleteSelection(doc);
+				}
+				enterNormalFromVisual();
+			}
+			case 'c', 's' -> {
+				if (mode == Mode.VISUAL_BLOCK) {
+					int[] cols = blockColumns();
+					deleteBlockSelection(doc);
+					enterInsert(safeOffset(lineStart(doc, cols[0]) + cols[2]));
+				} else {
+					int start = selectionStart();
+					deleteSelection(doc);
+					enterInsert(start);
+				}
+			}
+			case 'y' -> {
+				if (mode == Mode.VISUAL_BLOCK) {
+					int[] cols = blockColumns();
+					yankBlockSelection(doc);
+					caret = safeOffset(lineStart(doc, cols[0]) + cols[2]);
+				} else {
+					yankSelection(doc);
+					caret = selectionStart();
+				}
+				enterNormalFromVisual();
+			}
+			case '~' -> {
+				if (mode == Mode.VISUAL_BLOCK) {
+					toggleCaseBlockSelection(doc);
+				} else {
+					toggleCaseSelection(doc);
+				}
+				enterNormalFromVisual();
+			}
 			default -> { /* ignore */ }
 		}
 	}
 
-	private void enterNormalFromVisual(boolean caretAlreadySet) {
-		if (!caretAlreadySet) {
-			setCaret(caret);
-		} else {
-			setCaret(caret);
-		}
+	/** Maps a non-printable navigation key to a Visual-mode motion target, or -1 if it's not one of ours. */
+	private int motionForKeyCode(IDocument doc, int keyCode) {
+		return switch (keyCode) {
+			case SWT.ARROW_LEFT -> motionH(doc, count());
+			case SWT.ARROW_RIGHT -> motionL(doc, count());
+			case SWT.ARROW_UP -> motionVert(doc, -count());
+			case SWT.ARROW_DOWN -> motionVert(doc, count());
+			case SWT.HOME -> lineStart(doc, lineOf(caret));
+			case SWT.END -> lineEnd(doc, lineOf(caret));
+			default -> -1;
+		};
+	}
+
+	private void enterNormalFromVisual() {
+		setCaret(caret);
 		enterNormal();
 	}
 
 	private void enterNormal() {
+		if (mode == Mode.VISUAL_BLOCK && styledText != null && !styledText.isDisposed()) {
+			styledText.setBlockSelection(false);
+		}
 		mode = Mode.NORMAL;
 		resetPending();
 		setCaret(caret);
@@ -490,7 +616,125 @@ public class VimMode implements VerifyKeyListener {
 		caret = safeOffset(from);
 	}
 
+	// ------------------------------------------------------------------
+	// Visual Block: operates per-column-range across a span of lines rather
+	// than on one contiguous offset range. Column indices (not pixels) are
+	// used for the actual edits so they're correct for proportional fonts
+	// too; updateBlockSelection() below handles the on-screen highlight,
+	// which does need real pixel bounds (SWT's own block-selection API).
+	// ------------------------------------------------------------------
+
+	/** {topLine, bottomLine, leftCol, rightCol} of the block spanned by visualAnchor..caret. */
+	private int[] blockColumns() {
+		IDocument doc = document();
+		int lineA = lineOf(visualAnchor);
+		int lineB = lineOf(caret);
+		int colA = visualAnchor - lineStart(doc, lineA);
+		int colB = caret - lineStart(doc, lineB);
+		return new int[] {
+			Math.min(lineA, lineB), Math.max(lineA, lineB),
+			Math.min(colA, colB), Math.max(colA, colB)
+		};
+	}
+
+	private void deleteBlockSelection(IDocument doc) throws BadLocationException {
+		int[] cols = blockColumns();
+		copyToClipboard(blockText(doc, cols));
+		// delete back-to-front so earlier lines' offsets stay valid
+		for (int line = cols[1]; line >= cols[0]; line--) {
+			int ls = lineStart(doc, line);
+			int lineLen = Math.max(0, lineEnd(doc, line) - ls + 1);
+			int from = ls + Math.min(cols[2], lineLen);
+			int to = ls + Math.min(cols[3] + 1, lineLen);
+			if (to > from) {
+				doc.replace(from, to - from, "");
+			}
+		}
+		caret = safeOffset(lineStart(doc, cols[0]) + cols[2]);
+	}
+
+	private void yankBlockSelection(IDocument doc) throws BadLocationException {
+		copyToClipboard(blockText(doc, blockColumns()));
+	}
+
+	private void toggleCaseBlockSelection(IDocument doc) throws BadLocationException {
+		int[] cols = blockColumns();
+		for (int line = cols[0]; line <= cols[1]; line++) {
+			int ls = lineStart(doc, line);
+			int lineLen = Math.max(0, lineEnd(doc, line) - ls + 1);
+			int from = ls + Math.min(cols[2], lineLen);
+			int to = ls + Math.min(cols[3] + 1, lineLen);
+			if (to > from) {
+				String text = doc.get(from, to - from);
+				doc.replace(from, to - from, toggleCase(text));
+			}
+		}
+		caret = safeOffset(lineStart(doc, cols[0]) + cols[2]);
+	}
+
+	private String blockText(IDocument doc, int[] cols) throws BadLocationException {
+		StringBuilder sb = new StringBuilder();
+		for (int line = cols[0]; line <= cols[1]; line++) {
+			int ls = lineStart(doc, line);
+			int lineLen = Math.max(0, lineEnd(doc, line) - ls + 1);
+			int from = ls + Math.min(cols[2], lineLen);
+			int to = ls + Math.min(cols[3] + 1, lineLen);
+			if (to > from) {
+				sb.append(doc.get(from, to - from));
+			}
+			sb.append('\n');
+		}
+		return sb.toString();
+	}
+
+	/** Average character width of the widget's current font, for the block highlight's right edge. */
+	private int averageCharWidth() {
+		if (styledText == null || styledText.isDisposed()) {
+			return 1;
+		}
+		GC gc = new GC(styledText);
+		try {
+			return Math.max(1, gc.getFontMetrics().getAverageCharWidth());
+		} finally {
+			gc.dispose();
+		}
+	}
+
+	private void updateBlockSelection() {
+		if (styledText == null || styledText.isDisposed()) {
+			return;
+		}
+		try {
+			// getLocationAtOffset() returns coordinates relative to the widget's
+			// visible client area (i.e. already adjusted for scrolling), while
+			// setBlockSelectionBounds() expects document-absolute coordinates
+			// (its javadoc says so explicitly, and its implementation subtracts
+			// the current scroll offsets right back out) - so convert by adding
+			// the scroll offsets back in.
+			int hScroll = styledText.getHorizontalPixel();
+			int vScroll = styledText.getTopPixel();
+			Point anchorPt = styledText.getLocationAtOffset(safeOffset(visualAnchor));
+			Point caretPt = styledText.getLocationAtOffset(safeOffset(caret));
+			int ax = anchorPt.x + hScroll;
+			int ay = anchorPt.y + vScroll;
+			int cx = caretPt.x + hScroll;
+			int cy = caretPt.y + vScroll;
+			int lineHeight = styledText.getLineHeight(safeOffset(caret));
+			int left = Math.min(ax, cx);
+			int right = Math.max(ax, cx) + averageCharWidth();
+			int top = Math.min(ay, cy);
+			int bottom = Math.max(ay, cy) + lineHeight;
+			styledText.setBlockSelectionBounds(left, top, Math.max(1, right - left), Math.max(1, bottom - top));
+		} catch (IllegalArgumentException | SWTException e) {
+			// offset momentarily out of sync with the widget (e.g. mid-edit) - skip this refresh
+		}
+	}
+
 	private void updateSelection() {
+		if (mode == Mode.VISUAL_BLOCK) {
+			updateBlockSelection();
+			return;
+		}
 		int a = visualAnchor;
 		int b = caret;
 		int from, to;
@@ -1068,39 +1312,152 @@ public class VimMode implements VerifyKeyListener {
 	}
 
 	// ------------------------------------------------------------------
-	// Status line ("-- INSERT --" etc., like real Vim's bottom line)
+	// Status line: the Eclipse status line is now only used for transient
+	// prompts (the "/pattern" search capture, an ex-command error) - the
+	// mode itself is shown by the rounded-rectangle ModeBadge instead, per
+	// explicit request (a plain-text "-- NORMAL --" string wasn't wanted).
 	// ------------------------------------------------------------------
 
 	private IEditorStatusLine statusLine() {
 		return editor.getAdapter(IEditorStatusLine.class);
 	}
 
-	private void updateStatusLine() {
+	private void statusMessage(String msg) {
 		IEditorStatusLine status = statusLine();
-		if (status == null) {
-			return;
+		if (status != null) {
+			status.setMessage(false, msg, null);
 		}
-		String msg = switch (mode) {
-			case INSERT -> "-- INSERT --";
-			case VISUAL -> "-- VISUAL --";
-			case VISUAL_LINE -> "-- VISUAL LINE --";
-			case NORMAL -> "-- NORMAL --";
-		};
-		status.setMessage(false, msg, null);
+	}
+
+	private void updateStatusLine() {
+		statusMessage("");
+		if (modeBadge != null) {
+			modeBadge.update(mode);
+		}
 	}
 
 	// ------------------------------------------------------------------
-	// Caret appearance: thin line in Insert mode (StyledText's own default
-	// caret, untouched), a solid block covering the whole character cell -
-	// with the glyph redrawn in the inverse colour on top, like a terminal -
-	// in Normal/Visual mode.
+	// ":" ex-commands, entered through the Spotlight-style CommandPopup.
+	// Patterns in :s/// are plain Java regex (no Vim-regex translation) -
+	// a known, documented limitation for this first pass.
+	// ------------------------------------------------------------------
+
+	private void beginCommand() {
+		if (commandPopup != null) {
+			commandPopup.open(this::executeExCommand);
+		}
+	}
+
+	private void executeExCommand(String raw) {
+		String cmd = raw.startsWith(":") ? raw.substring(1) : raw;
+		cmd = cmd.trim();
+		if (cmd.isEmpty()) {
+			return;
+		}
+		try {
+			switch (cmd) {
+				case "w" -> doSave();
+				case "q", "q!" -> closeEditor();
+				case "wq", "x" -> { doSave(); closeEditor(); }
+				case "noh", "nohlsearch" -> lastSearch = null;
+				default -> {
+					if (cmd.matches("\\d+")) {
+						gotoLine(Integer.parseInt(cmd));
+					} else if (cmd.startsWith("%s/") || cmd.startsWith("s/")) {
+						runSubstitute(cmd);
+					} else {
+						statusMessage("E492: Not an editor command: " + cmd);
+					}
+				}
+			}
+		} catch (RuntimeException e) {
+			VimPlugin.log(e);
+		}
+	}
+
+	private void doSave() {
+		if (editor instanceof ISaveablePart saveable) {
+			saveable.doSave(new NullProgressMonitor());
+		}
+	}
+
+	private void closeEditor() {
+		IWorkbenchPage page = editor.getSite().getPage();
+		page.closeEditor(editor, false);
+	}
+
+	private void gotoLine(int oneBasedLine) {
+		IDocument doc = document();
+		int line = clampLine(oneBasedLine - 1);
+		caret = safeOffset(firstNonBlank(doc, line));
+		setCaret(caret);
+	}
+
+	/** ":s/pattern/replacement/[g]" (current line) or ":%s/pattern/replacement/[g]" (whole document). */
+	private void runSubstitute(String cmd) {
+		boolean wholeDoc = cmd.startsWith("%");
+		String body = wholeDoc ? cmd.substring(1) : cmd; // now starts with "s/"
+		if (!body.startsWith("s/")) {
+			return;
+		}
+		List<String> parts = splitUnescaped(body.substring(2), '/');
+		if (parts.size() < 2) {
+			return;
+		}
+		String pattern = parts.get(0);
+		String replacement = parts.get(1);
+		boolean global = parts.size() > 2 && parts.get(2).contains("g");
+		IDocument doc = document();
+		try {
+			Pattern p = Pattern.compile(pattern);
+			int fromLine = wholeDoc ? 0 : lineOf(caret);
+			int toLine = wholeDoc ? doc.getNumberOfLines() - 1 : lineOf(caret);
+			for (int line = fromLine; line <= toLine; line++) {
+				IRegion info = doc.getLineInformation(line);
+				String text = doc.get(info.getOffset(), info.getLength());
+				Matcher m = p.matcher(text);
+				String result = global ? m.replaceAll(replacement) : m.replaceFirst(replacement);
+				if (!result.equals(text)) {
+					doc.replace(info.getOffset(), info.getLength(), result);
+				}
+			}
+		} catch (java.util.regex.PatternSyntaxException | BadLocationException e) {
+			statusMessage("E486: substitute failed: " + e.getMessage());
+		}
+	}
+
+	/** Splits on an unescaped delimiter, turning "\<delim>" back into a literal <delim>. */
+	private static List<String> splitUnescaped(String s, char delim) {
+		List<String> out = new ArrayList<>();
+		StringBuilder cur = new StringBuilder();
+		for (int i = 0; i < s.length(); i++) {
+			char c = s.charAt(i);
+			if (c == '\\' && i + 1 < s.length() && s.charAt(i + 1) == delim) {
+				cur.append(delim);
+				i++;
+			} else if (c == delim) {
+				out.add(cur.toString());
+				cur.setLength(0);
+			} else {
+				cur.append(c);
+			}
+		}
+		out.add(cur.toString());
+		return out;
+	}
+
+	// ------------------------------------------------------------------
+	// Caret appearance: thin line in Insert mode and DISABLED mode
+	// (StyledText's own default caret, untouched), a solid block covering
+	// the whole character cell - with the glyph redrawn in the inverse
+	// colour on top, like a terminal - in Normal/Visual mode.
 	// ------------------------------------------------------------------
 
 	private void updateCaretAppearance() {
 		if (styledText == null || styledText.isDisposed()) {
 			return;
 		}
-		if (mode == Mode.INSERT) {
+		if (mode == Mode.INSERT || mode == Mode.DISABLED) {
 			if (styledText.getCaret() != insertCaret) {
 				styledText.setCaret(insertCaret);
 			}
