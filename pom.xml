@@ -68,8 +68,11 @@
     <module>debug</module>
     <module>ua</module>
     <module>terminal/</module>
+    <module>vim/org.eclipse.mieux.vim</module>
+    <module>vim/org.eclipse.mieux.vim.tests</module>
     <module>mcp/org.eclipse.mieux.mcp.server</module>
     <module>mcp/org.eclipse.mieux.mcp.server.tests</module>
+    <module>theming/org.eclipse.mieux.theme</module>
   </modules>
   <build>
     <pluginManagement>

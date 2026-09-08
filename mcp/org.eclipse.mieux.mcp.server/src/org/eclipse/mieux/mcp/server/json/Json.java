@@ -328,7 +328,14 @@ public final class Json {
 			}
 			String token = text.substring(start, pos);
 			try {
-				return isFloating ? Double.valueOf(token) : Long.valueOf(token);
+				// Deliberately not a ternary: `isFloating ? Double.valueOf(token) :
+				// Long.valueOf(token)` triggers Java's binary numeric promotion across
+				// the two branches (JLS 15.25) and silently turns every Long result
+				// into a Double, regardless of which branch actually ran.
+				if (isFloating) {
+					return Double.valueOf(token);
+				}
+				return Long.valueOf(token);
 			} catch (NumberFormatException e) {
 				throw new JsonParseException("Invalid number '" + token + "' at index " + start);
 			}
