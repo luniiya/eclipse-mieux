@@ -1,6 +1,6 @@
-# Eclipse ~~Platform Project~~ *mieux*
+# Eclipse ~~Platform Project~~ **mieux**
 
-<img width="3560" height="1440" alt="logo + text eclipse" src="https://github.com/user-attachments/assets/c17b7c17-fc67-41a6-8748-0d7287c6b6e8" />
+![Eclipse Mieux logo and name](art/logo + text eclipse.png)
 *(official branding, do not @ me)*
 
 Thanks for your interest in this project.
