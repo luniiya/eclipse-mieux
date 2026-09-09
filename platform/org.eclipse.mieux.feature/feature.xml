@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<feature
+      id="org.eclipse.mieux.feature"
+      label="Eclipse-mieux Extras"
+      version="1.0.0.qualifier"
+      provider-name="Eclipse-mieux">
+
+   <description>
+      Eclipse-mieux's own additions on top of stock Eclipse Platform: the
+      Mieux Lilac workbench theme and native vim mode for text editors.
+      Included directly in org.eclipse.sdk.ide's product definition (see
+      products/eclipse-sdk/sdk.product in the aggregator, patched in by
+      scripts/build.sh) since that product is feature-based (type="features")
+      and ignores bare &lt;plugin&gt; entries.
+   </description>
+
+   <plugin
+         id="org.eclipse.mieux.theme"
+         version="0.0.0"/>
+
+   <plugin
+         id="org.eclipse.mieux.vim"
+         version="0.0.0"/>
+
+</feature>

@@ -55,6 +55,27 @@ else
     ln -s "${REPO_ROOT}" "${PLATFORM_LINK}"
 fi
 
+# Compiling our custom bundles (theme, vim, mcp) into the reactor is NOT
+# enough to make them show up in the running IDE - Tycho's p2-director only
+# ships what the *product definition* actually references, and sdk.product
+# lives in this aggregator's eclipse.platform.releng submodule, not in our
+# repo. Same disposable-checkout problem as the symlink above: patch it in
+# every time, idempotently, rather than relying on a one-off manual edit
+# that a fresh clone would silently drop.
+#
+# sdk.product is type="features" (useFeatures=true) - Tycho silently IGNORES
+# a bare <plugins> list on a feature-based product ("The bundles specified
+# in the product definition are ignored; verify the value of the 'type' or
+# 'useFeatures' attribute" - learned that the hard way). So our bundles are
+# wrapped in platform/org.eclipse.mieux.feature (feature.xml listing
+# org.eclipse.mieux.theme + org.eclipse.mieux.vim) and it's THAT feature id
+# that goes in <features> here, not the bundles directly.
+SDK_PRODUCT="${AGGREGATOR_DIR}/products/eclipse-sdk/sdk.product"
+if [[ -f "${SDK_PRODUCT}" ]] && ! grep -q "org.eclipse.mieux.feature" "${SDK_PRODUCT}"; then
+    echo "==> Wiring org.eclipse.mieux.feature into ${SDK_PRODUCT}"
+    sed -i 's#<feature id="org.eclipse.terminal.feature" installMode="root"/>#<feature id="org.eclipse.terminal.feature" installMode="root"/>\n      <feature id="org.eclipse.mieux.feature" installMode="root"/>#' "${SDK_PRODUCT}"
+fi
+
 echo "==> JAVA_HOME=${JAVA_HOME}"
 echo "==> MAVEN_OPTS=${MAVEN_OPTS}"
 cd "${AGGREGATOR_DIR}"
@@ -101,7 +122,7 @@ is_known_parallel_race() {
     grep -q "zip file is empty" "${BUILD_LOG}"
 }
 
-for threads in 4 2 1; do
+for threads in 8 4 2 1; do
     echo "==> mvn ${MVN_BASE_ARGS[*]} --threads ${threads} ${EXTRA_ARGS[*]:-}"
     if mvn "${MVN_BASE_ARGS[@]}" --threads "${threads}" "${EXTRA_ARGS[@]}" 2>&1 | tee "${BUILD_LOG}"; then
         exit 0
