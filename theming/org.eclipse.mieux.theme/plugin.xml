@@ -10,4 +10,9 @@
       </theme>
    </extension>
 
+   <extension id="org.eclipse.mieux.theme.startup" point="org.eclipse.ui.startup">
+      <startup class="org.eclipse.mieux.theme.AwtWarmupStartup"/>
+      <startup class="org.eclipse.mieux.theme.CenteredMainMenuStartup"/>
+   </extension>
+
 </plugin>

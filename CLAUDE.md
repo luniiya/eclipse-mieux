@@ -58,15 +58,34 @@ Run `eclipse-mieux` to launch the GUI directly.
 - `terminal/` — terminal view
 - `platform/org.eclipse.sdk` — the SDK feature/branding (product id
   `org.eclipse.sdk.ide`, icons, splash, about text)
-- `vim/org.eclipse.mieux.vim` — native vim mode for text editors (modal
-  editing, status-bar mode indicator), started via `org.eclipse.ui.startup`
 - `theming/org.eclipse.mieux.theme` — see "Theming" section below
+
+There used to be a `vim/org.eclipse.mieux.vim` here — a from-scratch native
+vim-mode plugin. Pulled out (still in git history, just not built/shipped
+any more) in favor of vendoring Vrapper (https://marketplace.eclipse.org/content/vrapper-vim)
+instead: mature, GPLv3-licensed, in-process JFace/SWT-based like our own
+plugin was, no external Vim dependency. See the Vim mode section below.
 
 The rest of what actually ends up in the built IDE (JDT, PDE, SWT, the
 workbench UI) lives in sibling repos under the aggregator, not here — if a
 bug turns out to be in Java editing, debugging-UI-in-JDT, or the workbench
 itself rather than platform/runtime/resources, it's in one of those other
 submodules, not this checkout.
+
+## Vim mode (Vrapper)
+
+Vrapper is vendored as the git submodule `vim/vrapper`, pinned to
+`986d1da3bc5574835cf46b2aa8c9fa061e4b44bc`. The build compiles its independent
+Maven/Tycho reactor into a local p2 repository and adds the base
+`net.sourceforge.vrapper.feature` to the SDK product. To update it, run
+`git -C vim/vrapper fetch && git -C vim/vrapper checkout <new-commit>`, then
+run `scripts/build.sh` again.
+
+Vrapper is GPLv3 and remains a separate bundle tree; its source is never
+merged with this repository's EPL-2.0 code. It is enabled by default through
+Vrapper's own `org.eclipse.ui.startup` extension, with no manual setup step.
+For Vim-keybinding usage, see Vrapper's documentation:
+http://vrapper.sourceforge.net/documentation/.
 
 ## MCP server (agent UI automation) — planned/in progress
 

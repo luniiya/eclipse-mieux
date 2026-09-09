@@ -7,8 +7,10 @@
 
    <description>
       Eclipse-mieux's own additions on top of stock Eclipse Platform: the
-      Mieux Lilac workbench theme and native vim mode for text editors.
-      Included directly in org.eclipse.sdk.ide's product definition (see
+      Mieux Lilac workbench theme. (The native vim mode that used to live
+      here was pulled out -- see git history/vim/org.eclipse.mieux.vim --
+      in favor of vendoring Vrapper instead.) Included directly in
+      org.eclipse.sdk.ide's product definition (see
       products/eclipse-sdk/sdk.product in the aggregator, patched in by
       scripts/build.sh) since that product is feature-based (type="features")
       and ignores bare &lt;plugin&gt; entries.
@@ -16,10 +18,6 @@
 
    <plugin
          id="org.eclipse.mieux.theme"
-         version="0.0.0"/>
-
-   <plugin
-         id="org.eclipse.mieux.vim"
          version="0.0.0"/>
 
 </feature>

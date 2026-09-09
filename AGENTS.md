@@ -1,273 +1,209 @@
-# Eclipse Platform Repository - AI Agent Instructions
+@AGENTS.md
 
-This file provides guidance for AI coding assistants (GitHub Copilot, Claude Code, etc.) working with this repository.
+# Eclipse-mieux
 
-## Repository Overview
+A fork of the Eclipse Platform (this repo = upstream `eclipse.platform`) —
+required for uni coursework alongside Modelio ([[Modelio-mieux]]), and
+frankly kind of miserable to use stock. Goal: build it from source, then fix
+bugs and add features on top instead of just tolerating it.
 
-This repository contains the core Eclipse Platform components that form the basis for the Eclipse IDE. It is a **large-scale Java/OSGi project** (~120MB, 5,600+ Java files across 38 Maven modules) using **Maven/Tycho** for building Eclipse RCP bundles and features.
-
-**Key Technologies:**
-- Language: Java (JDK 21)
-- Build: Maven 3.9.12 with Eclipse Tycho (OSGi/RCP build tooling)
-- Architecture: OSGi bundles organized as Eclipse plugins
-- Testing: JUnit with Tycho Surefire plugin
-
-**Main Modules:**
-- `runtime/` - Core runtime, jobs, expressions, content types (org.eclipse.core.runtime, org.eclipse.core.jobs)
-- `resources/` - Workspace, filesystem, project management (org.eclipse.core.resources, org.eclipse.core.filesystem)
-- `debug/` - Debug framework and UI, external tools, launch configurations
-- `team/` - Version control framework (CVS examples)
-- `ua/` - User assistance: help system, cheatsheets, tips
-- `ant/` - Ant integration and UI
-- `terminal/` - Terminal view
-- `platform/` - SDK packaging
-
-## Critical Build Information
-
-The `-Pbuild-individual-bundles` profile (configured in `.mvn/maven.config`) enables the bundle to fetch the parent POM from https://repo.eclipse.org/content/repositories/eclipse/.
-
-**Note:** If network access to Eclipse repositories is blocked, individual bundle builds will fail. In such environments, code exploration and analysis can still be performed, but build verification is not possible.
-
-### Build Profiles Used in CI
-
-The Jenkinsfile shows the complete build command:
-```bash
-mvn clean verify --batch-mode --fail-at-end \
-  -Pbree-libs -Papi-check -Pjavadoc \
-  -Dmaven.test.failure.ignore=true \
-  -Dcompare-version-with-baselines.skip=false \
-  -Dmaven.compiler.failOnWarning=false
-```
-
-Key profiles:
-- `-Pbree-libs` - Bundle Runtime Execution Environment libraries
-- `-Papi-check` - API baseline comparison (detects breaking changes)
-- `-Pjavadoc` - Generate Javadoc
-
-## Testing
-
-**Test Organization:**
-- Tests are in `<module>/tests/` subdirectories (e.g., `runtime/tests/`, `resources/tests/`)
-- Test bundles follow naming: `org.eclipse.<area>.tests.<component>`
-- Tests use JUnit 5 with Tycho Surefire
-
-**Running Tests:**
-```bash
-# Run tests for a specific bundle
-cd <test-bundle-directory>
-mvn clean verify -Pbuild-individual-bundles
-
-# Tests are automatically run during 'mvn verify'
-# Test results: target/surefire-reports/TEST-*.xml
-```
-
-**Important Test Notes:**
-- Some tests require graphical display (use Xvnc in CI - see Jenkinsfile)
-- Tests in `debug/org.eclipse.debug.tests/src/org/eclipse/debug/tests/LocalSuite.java` require user terminal and should NOT run on build machines
-- Test failures are allowed in CI (`-Dmaven.test.failure.ignore=true`)
-
-## Validation & CI Checks
-
-### GitHub Actions Workflows
-
-All workflows delegate to the aggregator repository:
-
-1. **PR Checks** (`.github/workflows/pr-checks.yml`):
-   - Freeze period verification
-   - No merge commits check
-   - Version increment verification (uses PDE API Tools)
-
-2. **Continuous Integration** (`.github/workflows/ci.yml`):
-   - Delegates to `mavenBuild.yml` in aggregator
-   - Runs full build with all profiles
-
-3. **CodeQL** (`.github/workflows/codeql.yml`):
-   - Security scanning for Java code
-
-### Local Validation Steps
-
-Before committing, verify your changes:
+## Build & install
 
 ```bash
-# 1. Build the affected bundle
-cd <bundle-directory>
-mvn clean verify -Pbuild-individual-bundles
-
-# 2. Check for API issues (PDE API Tools)
-# API baseline checks run automatically with -Papi-check
-# Results in: target/apianalysis/*.xml
-
-# 3. Check for compiler warnings
-# Results in: target/compilelogs/*.xml
+scripts/install.sh              # build + install + (re)create app launcher
+scripts/install.sh --no-build   # reinstall only, skip the rebuild
+scripts/build.sh                # build only, don't touch the install
 ```
 
-### API Tools & Version Management
+**This repo alone does not build a runnable IDE** — it's only the platform
+*component* repo (runtime/resources/debug/ua/ant/team + the `org.eclipse.sdk`
+feature): it compiles bundles, not a materialized product. A real Eclipse SDK
+is assembled by the separate `eclipse.platform.releng.aggregator` project,
+which stitches this repo together with jdt/pde/swt/ui/equinox as git
+submodules. So `scripts/build.sh`:
 
-**Critical:** Eclipse uses semantic versioning with API tooling enforcement:
-- Major version: Breaking API changes
-- Minor version: Binary compatible API additions, significant changes
-- Service version: Bug fixes (increments: +1 for maintenance, +100 for next release)
-- Qualifier: Build timestamp
+1. Clones the aggregator as a **sibling checkout**, `../eclipse-platform-aggregator`
+   (first run only — `--recurse-submodules` pulls jdt/pde/swt/ui/equinox too;
+   expect several GB and a long clone).
+2. Replaces the aggregator's `eclipse.platform` submodule directory with a
+   **symlink to this repo**, so the build compiles your local edits here
+   instead of an unrelated separate clone. This intentionally breaks that
+   directory's git-submodule-ness inside the aggregator — that's fine, we
+   never commit anything inside the aggregator checkout, only build there.
+3. Runs `mvn clean verify --threads 1C -DskipTests` from the aggregator root
+   (upstream quotes ~10-20 min without tests; can be longer here, don't
+   assume a short timeout).
 
-**Version Change Rules:**
-1. API breaking change → Increment major version, reset minor/service to 0
-2. API addition (binary compatible) → Increment minor version, reset service to 0
-3. Bug fix in maintenance → Increment service by 1
-4. Bug fix in next release → Increment service by 100
+`scripts/common.sh` pins the toolchain: JDK 25 (`/usr/lib/jvm/java-25-openjdk`,
+already installed) and the system Maven (`>= 3.9.12`, already installed —
+no download/bootstrap needed here, unlike [[Modelio-mieux]]'s script).
 
-**PDE API Tools automatically detects API changes and enforces version increments.**
+Materialized output: `../eclipse-platform-aggregator/products/eclipse-sdk/target/products/org.eclipse.sdk.ide/linux/gtk/x86_64/eclipse/`
+(the full SDK product — JDT/PDE included — not the bare `eclipse-platform`
+product). Install target: `~/.local/opt/eclipse-mieux/`, symlinked as
+`~/.local/bin/eclipse-mieux` (on PATH), with a `.desktop` launcher entry
+regenerated at `~/.local/share/applications/eclipse-mieux.desktop` on every
+install.
 
-See `docs/VersionNumbering.md` and `docs/Evolving-Java-based-APIs.md` for complete details.
+Run `eclipse-mieux` to launch the GUI directly.
 
-## Project Structure
+## Source layout (this repo, within the aggregator)
 
-### Root Files
-- `pom.xml` - Main reactor POM (defines modules)
-- `Jenkinsfile` - Jenkins CI pipeline configuration
-- `.mvn/maven.config` - Default Maven options (includes `-Pbuild-individual-bundles`)
-- `.gitignore` - Excludes `target/`, `bin/`, `*.class`, etc.
+- `runtime/` — core runtime, jobs, expressions, content types
+- `resources/` — workspace, filesystem, project management
+- `debug/` — debug framework and UI, external tools, launch configurations
+- `team/` — version control framework (CVS examples)
+- `ua/` — user assistance: help system, cheatsheets, tips
+- `ant/` — Ant integration and UI
+- `terminal/` — Terminal view
+- `platform/org.eclipse.sdk` — the SDK feature/branding (product id
+  `org.eclipse.sdk.ide`, icons, splash, about text)
+- `theming/org.eclipse.mieux.theme` — see "Theming" section below
 
-### Key Configuration Files
+There used to be a `vim/org.eclipse.mieux.vim` here — a from-scratch native
+vim-mode plugin. Pulled out (still in git history, just not built/shipped any
+more) in favor of vendoring Vrapper (https://marketplace.eclipse.org/content/vrapper-vim)
+instead: mature, EPL-licensed, in-process JFace/SWT-based like our own
+plugin was, no external Vim dependency — see [[eclipse-mieux-vrapper]] for
+where that lives once it's wired in.
 
-**Per Bundle:**
-- `pom.xml` - Maven coordinates and build config
-- `META-INF/MANIFEST.MF` - OSGi bundle manifest (Bundle-SymbolicName, Bundle-Version, dependencies)
-- `build.properties` - Tycho/PDE build configuration (source folders, bin.includes)
-- `.project` - Eclipse project descriptor
-- `.classpath` - Eclipse classpath (typically generated)
+The rest of what actually ends up in the built IDE (JDT, PDE, SWT, the
+workbench UI) lives in sibling repos under the aggregator, not here — if a
+bug turns out to be in Java editing, debugging-UI-in-JDT, or the workbench
+itself rather than platform/runtime/resources, it's in one of those other
+submodules, not this checkout.
 
-**Coding Standards:**
-- `docs/Coding_Conventions.md` - Java coding style (follows Oracle conventions with modifications)
-- `docs/Naming_Conventions.md` - Package/class naming rules
-- Indent with tabs (4 spaces wide)
-- Encoding: UTF-8 (see `.settings/org.eclipse.core.resources.prefs`)
+## MCP server (agent UI automation) — planned/in progress
 
-## Common Pitfalls & Solutions
+Goal: let an AI agent drive the running IDE **as text, not pixels** — no
+screenshots, ever. The agent asks for a snapshot of a window and gets back a
+structured tree of widgets (menus, buttons, checkboxes, text fields, trees,
+tables) with enough identity to act on them directly.
 
-### 1. Parent POM Resolution Failure
-**Error:** `Non-resolvable parent POM for org.eclipse.platform:eclipse.platform`
+New top-level module `mcp/` (peer to `runtime/`, `debug/`, `ua/`):
 
-**Solution:** Always use `-Pbuild-individual-bundles` profile when building individual bundles. This profile is pre-configured in `.mvn/maven.config` but may be needed explicitly in some contexts.
+- **`org.eclipse.mieux.mcp.server`** — the bundle, split so most of it has no
+  SWT/Workbench dependency:
+  - `protocol/` — JSON-RPC 2.0 + MCP messages (`initialize`, `tools/list`,
+    `tools/call`). Pure Java.
+  - `registry/` — `Tool` interface (name, description, JSON schema,
+    `execute(args)`) + `ToolRegistry`. Pure Java.
+  - `transport/` — local HTTP+JSON-RPC listener via JDK's built-in
+    `com.sun.net.httpserver` (no new external dep to drag through Tycho).
+    Bound to `127.0.0.1` only, random port, per-launch random bearer token
+    written to a local file — this is real control-surface power, so it's
+    gated by at least that much.
+  - `ui/` — the SWT-facing part, depends on `org.eclipse.swt`,
+    `org.eclipse.ui`, `org.eclipse.jface` (same cross-submodule dependency
+    pattern `debug/org.eclipse.debug.ui` already uses — SWT/Workbench source
+    lives in the aggregator's sibling submodules, not this repo, but bundles
+    here can depend on them same as always).
+    - **Widget tree walker**: walks `Display` → `Shell[]` → `Control` tree,
+      plus menu bars/context menus, into a JSON node tree (role, label,
+      enabled/visible/checked/value/selection, children). Every widget in a
+      snapshot gets an **ephemeral numeric id**, scoped to that snapshot —
+      snapshot, then act using those ids; a fresh snapshot invalidates old
+      ones. Avoids stale-widget-reference bugs.
+    - **Action tools**, all marshalled onto the SWT UI thread via
+      `Display.syncExec` (mandatory — SWT is single-threaded): `ui_click`,
+      `ui_set_text`, `ui_set_checked`, `ui_select` (combo/list/tree/table),
+      `ui_expand` (tree nodes), `ui_invoke_menu`. Plus `ui_list_windows` and
+      `ui_snapshot(shell_id, maxDepth)`.
+    - `IStartup` extension boots the HTTP server on workbench start
+      (auto-start by default — loopback + token makes that low-risk).
+  - v1 widget scope: **menus & toolbar, dialogs & wizards, trees & tables**.
+    Editor text content and full launch/debug control are explicitly out of
+    scope for v1.
 
-### 2. Missing Dependencies During Build
-**Error:** Cannot resolve bundle dependencies
+- **`org.eclipse.mieux.mcp.server.tests`** — plain JUnit, no display: JSON-RPC
+  parsing/error codes, tool dispatch, fake tools. Fast, no aggregator needed.
+- **`org.eclipse.mieux.mcp.server.ui.tests`** — real JUnit-plugin tests with
+  an actual `Display`/`Shell` built in-test, asserting snapshots match and
+  that click/set-text/toggle/select really mutate real widgets.
 
-**Solution:** 
-- Individual bundles fetch dependencies from Eclipse repositories
-- Ensure https://repo.eclipse.org is accessible
-- Clean local Maven cache if corrupted: `rm -rf ~/.m2/repository/org/eclipse`
+**Testing reality**: the `ui`/`ui.tests` bundles depend on SWT/Workbench,
+which only exist once assembled by the aggregator — so exercising them means
+the `scripts/build.sh` flow (slow, first run clones the aggregator). The
+`protocol`/`registry` part has no such dependency and is built/tested
+standalone and fast. `ui.tests` needs a display like other UI tests here
+(Xvfb locally, per the existing "Missing Dependencies"/testing notes in
+AGENTS.md).
 
-### 3. Test Failures Requiring Display
-**Error:** Tests fail with "No display available"
+## Theming
 
-**Solution:** 
-- Tests requiring GUI run automatically on CI (Xvnc configured in Jenkinsfile)
-- For local testing, use Xvfb: `xvfb-run mvn verify`
-- Or skip tests: `mvn verify -DskipTests`
+Custom E4 CSS workbench theme, `org.eclipse.mieux.theme.lilac` ("Mieux
+Lilac"): pastel lilac/white palette, Cantarell UI font, JetBrainsMono Nerd
+Font Mono as the default editor font, rounded-top editor/view tabs. Set as
+the default via the `cssTheme` product property in both
+`platform/org.eclipse.sdk/plugin.xml` and
+`platform/org.eclipse.platform/plugin.xml`; switchable at runtime via
+Window > Preferences > General > Appearance.
 
-### 4. API Tools Errors
-**Error:** "API baseline errors found"
+- The E4 CSS engine (`org.eclipse.e4.ui.css.swt.theme`, lives in the `ui`
+  submodule, not this repo) has **no `border-radius` property** — confirmed
+  by grepping its source. `theming/org.eclipse.mieux.theme`'s
+  `css/mieux-lilac.css` `@import`s the platform's own
+  `e4_default_gtk.css` and overrides just the palette-carrying selectors
+  (trim/toolbar/view backgrounds, tab fill/keyline/outline colors, fonts)
+  rather than rebuilding the whole stylesheet.
+- Rounded tab corners come from `RoundedTabRenderer`
+  (`theming/org.eclipse.mieux.theme/src/.../RoundedTabRenderer.java`), a
+  `CTabRendering` subclass registered via the CSS `swt-tab-renderer`
+  property. `CTabRendering`'s own tab-fill/outline colors are package-
+  private, so rather than reimplement tab painting (text, icon, close button,
+  dirty-indicator, hot/inactive alpha blending) the renderer clips the paint
+  area to a rounded-top `Path` and delegates to `super.draw(...)` for
+  everything else — corners outside the path just get cut away.
+- Out of scope for this pass: the toolbar/editor icon language (lives in the
+  `ui`/`jdt`/`pde` submodules, not this checkout) and anything at the
+  desktop/window-manager level (rounded window chrome, custom title bar,
+  widgets) — that's Hyprland/eww territory, not something SWT/E4 can draw.
 
-**Solution:**
-- Review changes in `target/apianalysis/*.xml`
-- If API changed, update bundle version in `META-INF/MANIFEST.MF`
-- Follow version increment rules (see docs/VersionNumbering.md)
-- For intentional API breaks, update baseline comparison
+## Environment notes
 
-### 5. Build Timeouts
-Maven operations can take considerable time:
-- Clean build of single bundle: 1-3 minutes
-- Full platform build (aggregator): 30-60 minutes
-- Test execution: Variable, some test suites take 10+ minutes
+- No passwordless sudo — don't shell out to `sudo`; scripts are designed to
+  need none for the normal build/install path (JDK 25 and Maven are already
+  installed system-wide).
+- User's shell is fish; `~/.local/bin` is confirmed on PATH.
+- Desktop environment is Hyprland — `.desktop` entries go through
+  `~/.local/share/applications/` for launcher (rofi/wofi/fuzzel-style) pickup.
+- The aggregator clone is heavy (jdt/pde/swt/ui/equinox as submodules) and
+  the build is slow and can be fragile — don't be surprised if a fresh
+  aggregator checkout needs troubleshooting network/version issues the first
+  time through.
 
-**Set adequate timeouts when building (default 120s may not be enough):**
+## Logs & crash diagnostics
+
+When something misbehaves (freeze, crash, wrong UI) — **this is the path to
+check/report first**, no setup needed. `scripts/install.sh` patches
+`eclipse.ini` on every install to pin these to fixed locations *outside*
+`~/.local/opt/eclipse-mieux` (which install.sh `rm -rf`'s on every
+reinstall), so they survive rebuilds and are always the same path:
+
+- **`~/.local/share/eclipse-mieux/workspace/.metadata/.log`** — the main
+  platform log (errors, stack traces, plugin failures). The UI freeze
+  monitor (`org.eclipse.ui.monitoring`, on by default here) also logs here:
+  any freeze ≥500ms gets an `!ENTRY org.eclipse.ui.monitoring` block with a
+  full thread-dump sample once the UI recovers — usually the fastest way to
+  diagnose a "it froze for a bit" report. Paste the relevant `!ENTRY`/
+  `!MESSAGE`/`!STACK` block, not the whole file.
+- **`~/.local/state/eclipse-mieux/eclipse.log`** — a workspace-independent
+  mirror of the same platform log (`-Dosgi.logfile`), in case `-data` is
+  ever overridden or the workspace changes.
+
+**If the IDE is still frozen right now** (not recovered), the log above
+won't have anything yet — the freeze monitor only logs *after* the UI
+thread becomes responsive again. Grab a live thread dump instead:
+
 ```bash
-mvn verify -Pbuild-individual-bundles  # May need 180-300 seconds
+jstack -l "$(pgrep -f equinox.launcher)"   # or: jcmd <pid> Thread.print
 ```
 
-## Making Changes
+Look at the thread named `"main"` — SWT/GTK is single-threaded, so that's
+the UI thread. `RUNNABLE` stuck in a native call, or `BLOCKED`/`WAITING` on a
+lock another thread holds, is the interesting case; parked in
+`Display.sleep()` means it's just idle, not hung.
 
-### Typical Change Workflow
-
-1. **Locate the Bundle:**
-   - Runtime/core services → `runtime/bundles/`
-   - Resource/workspace → `resources/bundles/`
-   - Debug/launch → `debug/`
-   - Help/documentation → `ua/`
-
-2. **Make Code Changes:**
-   - Edit Java sources in bundle's `src/` directory
-   - Follow coding conventions (see `docs/Coding_Conventions.md`)
-   - Add/update Javadoc for public APIs
-
-3. **Update MANIFEST.MF if needed:**
-   - Changed API? Update `Bundle-Version` following semantic versioning
-   - New dependencies? Add to `Require-Bundle` or `Import-Package`
-
-4. **Build and Test:**
-   ```bash
-   cd <bundle-directory>
-   mvn clean verify -Pbuild-individual-bundles
-   ```
-
-5. **Verify No API Issues:**
-   - Check `target/apianalysis/*.xml` for API baseline errors
-   - Address any version increment requirements
-
-6. **Commit:**
-   - Write clear commit message
-   - Reference issue number if applicable
-
-## File Locations Reference
-
-**Documentation:** All in `docs/`
-- `docs/Coding_Conventions.md` - Code style
-- `docs/API_Central.md` - API guidelines hub
-- `docs/VersionNumbering.md` - Version management
-- `docs/FAQ/` - 200+ FAQ markdown files
-
-**Build Configuration:**
-- `.mvn/maven.config` - Maven CLI defaults
-- `Jenkinsfile` - CI build definition (60 min timeout)
-- `.github/workflows/*.yml` - GitHub Actions (all delegate to aggregator)
-
-**Key Bundle Directories:**
-- `runtime/bundles/org.eclipse.core.runtime` - Core Platform Runtime
-- `runtime/bundles/org.eclipse.core.jobs` - Jobs and scheduling
-- `resources/bundles/org.eclipse.core.resources` - Workspace API
-- `resources/bundles/org.eclipse.core.filesystem` - Filesystem abstraction
-
-## Working Efficiently
-
-**Trust these instructions first.** This repository has a complex build setup that cannot be fully explored from the repository alone. The information above captures the essential knowledge needed to:
-- Understand build requirements and limitations
-- Make targeted changes without breaking CI
-- Navigate the codebase effectively
-- Avoid common build pitfalls
-
-Only search beyond these instructions if:
-- Specific API behavior needs clarification (check `docs/FAQ/`)
-- Detailed versioning rules are needed (check `docs/VersionNumbering.md`)
-- You need examples of existing code patterns (search Java sources)
-- CI is failing with an error not covered here (check Jenkinsfile and workflow YAMLs)
-
-**When in doubt:** Build at the bundle level with `-Pbuild-individual-bundles` profile and verify tests pass locally before pushing changes.
-
-## AI Agent-Specific Notes
-
-### For GitHub Copilot
-- This file is automatically read by GitHub Copilot when providing code suggestions
-- Copilot uses this context to understand the project structure and conventions
-- Copilot excels at inline code completion and small-scale refactoring
-
-### For Claude Code
-- Claude Code has access to this file via the `CLAUDE.md` file in the repository root
-- Claude Code is better suited for multi-file refactoring and architectural changes
-- Use Claude Code for tasks requiring deep codebase understanding across multiple modules
-- Claude Code can execute builds and tests directly via Maven commands
-
-### For Other AI Agents
-- Read this file to understand the repository structure and build requirements
-- Follow the coding conventions in `docs/Coding_Conventions.md`
-- Always test changes with `mvn clean verify -Pbuild-individual-bundles` before committing
-- Check API baseline with `-Papi-check` when modifying public APIs
+The general workflow: hit a bug → grab the relevant log excerpt (or a
+thread dump if still frozen) → hand it to Claude along with what you were
+doing → Claude fixes it → `scripts/install.sh` → retest.

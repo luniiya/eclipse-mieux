@@ -11,5 +11,6 @@ Require-Bundle: org.eclipse.e4.ui.css.swt.theme,
  org.eclipse.ui.themes,
  org.eclipse.e4.ui.workbench.renderers.swt,
  org.eclipse.swt,
- org.eclipse.jface
+ org.eclipse.jface,
+ org.eclipse.ui
 Automatic-Module-Name: org.eclipse.mieux.theme

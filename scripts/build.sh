@@ -64,7 +64,68 @@ else
     ln -s "${REPO_ROOT}" "${PLATFORM_LINK}"
 fi
 
-# Compiling our custom bundles (theme, vim, mcp) into the reactor is NOT
+# Build Vrapper as its own Tycho reactor. It is a GPLv3 project and remains a
+# separate git submodule; none of its source is merged into this reactor.
+VRAPPER_SOURCE="${REPO_ROOT}/vim/vrapper"
+VRAPPER_REPOSITORY="${VRAPPER_SOURCE}/target/repository"
+if [[ ! -f "${VRAPPER_SOURCE}/.git" && ! -d "${VRAPPER_SOURCE}/.git" ]]; then
+    echo "error: Vrapper submodule is not initialized at ${VRAPPER_SOURCE}" >&2
+    echo "       Run: git submodule update --init vim/vrapper" >&2
+    exit 1
+fi
+
+VRAPPER_COMMIT="$(git -C "${VRAPPER_SOURCE}" rev-parse HEAD)"
+VRAPPER_STAMP="${VRAPPER_REPOSITORY}/.eclipse-mieux-vrapper-commit"
+if [[ -f "${VRAPPER_STAMP}" ]] && [[ "$(<"${VRAPPER_STAMP}")" == "${VRAPPER_COMMIT}" ]] && [[ -f "${VRAPPER_REPOSITORY}/LICENSE.md" ]]; then
+    echo "==> Vrapper p2 repository already built at ${VRAPPER_COMMIT}"
+else
+    VRAPPER_BUILD_DIR="$(mktemp -d)"
+    trap 'rm -rf "${VRAPPER_BUILD_DIR}"' EXIT
+    echo "==> Building Vrapper ${VRAPPER_COMMIT} in its independent reactor"
+    git -C "${VRAPPER_SOURCE}" archive --format=tar HEAD | tar -xf - -C "${VRAPPER_BUILD_DIR}"
+    python3 "${SCRIPT_DIR}/prepare-vrapper-build.py" "${VRAPPER_BUILD_DIR}"
+    VRAPPER_JAVA_HOME="${VRAPPER_JAVA_HOME:-/usr/lib/jvm/java-21-openjdk}"
+    if [[ ! -x "${VRAPPER_JAVA_HOME}/bin/java" ]]; then
+        VRAPPER_JAVA_HOME="${JAVA_HOME}"
+    fi
+    (
+        cd "${VRAPPER_BUILD_DIR}"
+        export JAVA_HOME="${VRAPPER_JAVA_HOME}"
+        export PATH="${JAVA_HOME}/bin:${PATH}"
+        mvn clean verify -DskipTests -Dtycho.test.skip=true \
+            -pl plugins/net.sourceforge.vrapper.core,plugins/net.sourceforge.vrapper.eclipse,features/net.sourceforge.vrapper.feature,releng/net.sourceforge.vrapper.releng.update-site \
+            -am
+    )
+    rm -rf "${VRAPPER_REPOSITORY}"
+    mkdir -p "${VRAPPER_REPOSITORY}"
+    cp -a "${VRAPPER_BUILD_DIR}/releng/net.sourceforge.vrapper.releng.update-site/target/repository/." "${VRAPPER_REPOSITORY}/"
+    cp "${VRAPPER_SOURCE}/LICENSE.md" "${VRAPPER_REPOSITORY}/LICENSE.md"
+    printf '%s\n' "${VRAPPER_COMMIT}" > "${VRAPPER_STAMP}"
+    rm -rf "${VRAPPER_BUILD_DIR}"
+    trap - EXIT
+fi
+
+# sdk.product's repository list is consumed by the p2 director, but it is not
+# a source for the product module's Tycho target platform. Add the generated
+# Vrapper feature to the aggregator target definition as well, using the exact
+# version emitted by Vrapper's p2 metadata. The target file lives in the
+# disposable sibling aggregator and is patched idempotently on every build.
+VRAPPER_FEATURE_VERSION="$(xz -dc "${VRAPPER_REPOSITORY}/content.xml.xz" \
+    | sed -n "s/.*<unit id='net\.sourceforge\.vrapper\.feature\.feature\.group' version='\([^']*\)'.*/\1/p" \
+    | head -n 1)"
+if [[ -z "${VRAPPER_FEATURE_VERSION}" ]]; then
+    echo "error: could not determine Vrapper feature version from ${VRAPPER_REPOSITORY}" >&2
+    exit 1
+fi
+VRAPPER_TARGET="${AGGREGATOR_DIR}/eclipse.platform.releng.prereqs.sdk/eclipse-sdk-prereqs.target"
+if [[ ! -f "${VRAPPER_TARGET}" ]]; then
+    echo "error: expected SDK target definition is missing: ${VRAPPER_TARGET}" >&2
+    exit 1
+fi
+python3 "${SCRIPT_DIR}/add-vrapper-target-location.py" \
+    "${VRAPPER_TARGET}" "${VRAPPER_REPOSITORY}" "${VRAPPER_FEATURE_VERSION}"
+
+# Compiling our custom bundles (theme, mcp) into the reactor is NOT
 # enough to make them show up in the running IDE - Tycho's p2-director only
 # ships what the *product definition* actually references, and sdk.product
 # lives in this aggregator's eclipse.platform.releng submodule, not in our
@@ -77,12 +138,27 @@ fi
 # in the product definition are ignored; verify the value of the 'type' or
 # 'useFeatures' attribute" - learned that the hard way). So our bundles are
 # wrapped in platform/org.eclipse.mieux.feature (feature.xml listing
-# org.eclipse.mieux.theme + org.eclipse.mieux.vim) and it's THAT feature id
-# that goes in <features> here, not the bundles directly.
+# org.eclipse.mieux.theme) and it's THAT feature id that goes in <features>
+# here, not the bundles directly. Vrapper is supplied by the local p2
+# repository built above, so its feature is listed separately below.
 SDK_PRODUCT="${AGGREGATOR_DIR}/products/eclipse-sdk/sdk.product"
-if [[ -f "${SDK_PRODUCT}" ]] && ! grep -q "org.eclipse.mieux.feature" "${SDK_PRODUCT}"; then
-    echo "==> Wiring org.eclipse.mieux.feature into ${SDK_PRODUCT}"
-    sed -i 's#<feature id="org.eclipse.terminal.feature" installMode="root"/>#<feature id="org.eclipse.terminal.feature" installMode="root"/>\n      <feature id="org.eclipse.mieux.feature" installMode="root"/>#' "${SDK_PRODUCT}"
+if [[ -f "${SDK_PRODUCT}" ]]; then
+    if ! grep -q "org.eclipse.mieux.feature" "${SDK_PRODUCT}"; then
+        echo "==> Wiring org.eclipse.mieux.feature into ${SDK_PRODUCT}"
+        sed -i 's#<feature id="org.eclipse.terminal.feature" installMode="root"/>#<feature id="org.eclipse.terminal.feature" installMode="root"/>\n      <feature id="org.eclipse.mieux.feature" installMode="root"/>#' "${SDK_PRODUCT}"
+    fi
+    if ! grep -q "net.sourceforge.vrapper.feature" "${SDK_PRODUCT}"; then
+        echo "==> Wiring Vrapper into ${SDK_PRODUCT}"
+        sed -i 's#<feature id="org.eclipse.mieux.feature" installMode="root"/>#<feature id="org.eclipse.mieux.feature" installMode="root"/>\n      <feature id="net.sourceforge.vrapper.feature" installMode="root"/>#' "${SDK_PRODUCT}"
+    fi
+    if ! grep -q "Eclipse-mieux Vrapper" "${SDK_PRODUCT}"; then
+        echo "==> Adding the local Vrapper p2 repository to ${SDK_PRODUCT}"
+        sed -i "s#   </repositories>#      <repository location=\"file://${VRAPPER_REPOSITORY}\" name=\"Eclipse-mieux Vrapper\" enabled=\"true\" />\n   </repositories>#" "${SDK_PRODUCT}"
+    fi
+    if ! grep -q 'plugin id="net.sourceforge.vrapper.eclipse"' "${SDK_PRODUCT}"; then
+        echo "==> Enabling Vrapper startup in ${SDK_PRODUCT}"
+        sed -i 's#      <plugin id="org.eclipse.core.runtime" autoStart="true" startLevel="4" />#      <plugin id="org.eclipse.core.runtime" autoStart="true" startLevel="4" />\n      <plugin id="net.sourceforge.vrapper.eclipse" autoStart="true" startLevel="4" />#' "${SDK_PRODUCT}"
+    fi
 fi
 
 # Scope products/ (eclipse-platform, eclipse-sdk, equinox-launcher,
@@ -155,7 +231,8 @@ BUILD_LOG="$(mktemp)"
 trap 'rm -f "${BUILD_LOG}"' EXIT
 
 is_known_parallel_race() {
-    grep -q "zip file is empty" "${BUILD_LOG}"
+    grep -q "zip file is empty" "${BUILD_LOG}" || \
+        grep -Eq "org\.eclipse\.sdk\.feature\.group.*could not be found" "${BUILD_LOG}"
 }
 
 for threads in 8 4 2 1; do

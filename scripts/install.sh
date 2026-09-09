@@ -62,13 +62,13 @@ STATE_DIR="${HOME}/.local/state/eclipse-mieux"
 mkdir -p "${WORKSPACE_DIR}" "${STATE_DIR}"
 if [[ -f "${ECLIPSE_INI}" ]] && ! grep -q "osgi.logfile" "${ECLIPSE_INI}"; then
     echo "==> Pinning workspace/log paths in ${ECLIPSE_INI}"
-    awk -v ws="${WORKSPACE_DIR}" -v log="${STATE_DIR}/eclipse.log" '
+    awk -v ws="${WORKSPACE_DIR}" -v logfile="${STATE_DIR}/eclipse.log" '
         /^-vmargs$/ && !done {
             print "-data"
             print ws
             print "-consoleLog"
             print $0
-            print "-Dosgi.logfile=" log
+            print "-Dosgi.logfile=" logfile
             done = 1
             next
         }
