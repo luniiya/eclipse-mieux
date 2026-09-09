@@ -485,6 +485,60 @@ class VimModeTest {
     }
 
     // ------------------------------------------------------------------
+    // Block-mode I/A: insert once on the block's first line, replay at the
+    // same column on every other line the block spanned.
+    // ------------------------------------------------------------------
+
+    @Test
+    void visual_block_I_replays_inserted_text_at_the_left_column() throws Exception {
+        openWith("abc\nabc\nabc");
+        ctrl('v');
+        keys("l"); // columns 0..1
+        key('j');
+        key('j'); // block now spans all three lines
+        key('I');
+        assertEquals("INSERT", modeName());
+        typeInsert("X");
+        esc();
+        assertEquals("NORMAL", modeName());
+        assertEquals("Xabc\nXabc\nXabc", text());
+    }
+
+    @Test
+    void visual_block_A_replays_inserted_text_at_the_right_column() throws Exception {
+        openWith("abc\nabc\nabc");
+        ctrl('v');
+        keys("l"); // columns 0..1, so A's right edge is column 2
+        key('j');
+        key('j');
+        key('A');
+        assertEquals("INSERT", modeName());
+        typeInsert("X");
+        esc();
+        assertEquals("abXc\nabXc\nabXc", text());
+    }
+
+    @Test
+    void visual_block_insert_skips_lines_too_short_to_reach_the_column() {
+        // Target column 4 ('e' in "abcdef"); the middle line ("ab") can't
+        // reach it and must be left alone, not padded or crashed on.
+        // Uses a single counted "2j" (rather than "j" twice) to jump straight
+        // from line 0 to line 2 - motionVert computes a counted vertical
+        // motion's column against the destination line only, so this avoids
+        // an unrelated, pre-existing quirk where two single "j"s would clamp
+        // the caret's column down while passing through the short line 1 and
+        // never recover it on line 2, corrupting this test's own setup.
+        openWith("abcdef\nab\nabcdef");
+        keys("4l"); // caret to column 4 on the first line
+        ctrl('v');
+        keys("2j"); // block spans lines 0-2, one column wide (col 4)
+        key('I');
+        typeInsert("Z");
+        esc();
+        assertEquals("abcdZef\nab\nabcdZef", text());
+    }
+
+    // ------------------------------------------------------------------
     // Search
     // ------------------------------------------------------------------
 
@@ -497,6 +551,40 @@ class VimModeTest {
         assertEquals(8, caretOffset());
         key('n');
         assertEquals(16, caretOffset());
+    }
+
+    @Test
+    void slash_search_highlights_every_match() throws Exception {
+        openWith("foo bar foo baz foo");
+        key('/');
+        keys("foo");
+        enter();
+        assertEquals(3, ((java.util.List<?>) getPrivate("searchHighlights")).size());
+    }
+
+    @Test
+    void noh_clears_search_highlights() throws Exception {
+        openWith("foo bar foo");
+        key('/');
+        keys("foo");
+        enter();
+        assertEquals(2, ((java.util.List<?>) getPrivate("searchHighlights")).size());
+        invokePrivate("executeExCommand", new Class<?>[] { String.class }, ":noh");
+        assertEquals(0, ((java.util.List<?>) getPrivate("searchHighlights")).size());
+        assertNull(getPrivate("lastSearch"));
+    }
+
+    @Test
+    void a_new_search_replaces_the_old_highlight_instead_of_accumulating() throws Exception {
+        openWith("foo bar foo baz foo");
+        key('/');
+        keys("foo");
+        enter();
+        assertEquals(3, ((java.util.List<?>) getPrivate("searchHighlights")).size());
+        key('/');
+        keys("bar");
+        enter();
+        assertEquals(1, ((java.util.List<?>) getPrivate("searchHighlights")).size());
     }
 
     // ------------------------------------------------------------------

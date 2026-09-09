@@ -12,4 +12,55 @@
          point="org.eclipse.ui.startup">
       <startup class="org.eclipse.mieux.vim.VimStartup"/>
    </extension>
+
+   <!--
+       VimMode activates this context (via IContextService) for every mode
+       that captures raw keystrokes - Normal and all three Visual variants -
+       and deactivates it for Insert/Disabled. It's parented under the
+       standard text-editor scope (org.eclipse.ui.textEditorScope, defined by
+       org.eclipse.ui) rather than the broader window scope, so it only ever
+       shadows bindings while a text editor actually has focus.
+    -->
+   <extension
+         id="org.eclipse.mieux.vim.contexts"
+         point="org.eclipse.ui.contexts">
+      <context
+            id="org.eclipse.mieux.vim.context.capture"
+            name="Vim Mode Key Capture"
+            description="Active while eclipse-mieux's native Vim mode is capturing Normal/Visual-mode keystrokes in a text editor, so its own key handling isn't shadowed by conflicting default keybindings."
+            parentId="org.eclipse.ui.textEditorScope">
+      </context>
+   </extension>
+
+   <!--
+       Within org.eclipse.mieux.vim.context.capture, rebind these two
+       sequences to NO command (empty commandId). This is the standard
+       Eclipse Platform UI "unbind" idiom (see e.g. org.eclipse.jdt.ui's
+       plugin.xml, or org.eclipse.jdt.astview's carbon-only unbind of
+       M2+M3+Q A) - WorkbenchKeyboard resolves a key sequence per the
+       active context with the highest priority, and a binding to no
+       command there means the sequence is treated as unbound in this
+       context even though a broader context (e.g.
+       org.eclipse.ui.contexts.window, where "Edit > Paste" claims M1+V and
+       something else may claim M1+R) still binds it to a real command.
+       That lets the KeyDown fall through WorkbenchKeyboard untouched and
+       reach the editor's VerifyKeyListener chain, where VimMode's own
+       Ctrl+V (enter Visual Block) / Ctrl+R (redo) handling already lives.
+    -->
+   <extension
+         id="org.eclipse.mieux.vim.bindings"
+         point="org.eclipse.ui.bindings">
+      <key
+            sequence="M1+V"
+            contextId="org.eclipse.mieux.vim.context.capture"
+            commandId=""
+            schemeId="org.eclipse.ui.defaultAcceleratorConfiguration">
+      </key>
+      <key
+            sequence="M1+R"
+            contextId="org.eclipse.mieux.vim.context.capture"
+            commandId=""
+            schemeId="org.eclipse.ui.defaultAcceleratorConfiguration">
+      </key>
+   </extension>
 </plugin>

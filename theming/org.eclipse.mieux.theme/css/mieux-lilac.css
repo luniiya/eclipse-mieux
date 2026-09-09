@@ -22,9 +22,19 @@ Link {
 	swt-link-foreground-color: #8A6FD1;
 }
 
+/* .MTrimBar covers the top toolbar trim generically; the two id-scoped
+ * variants restate the same color at matching specificity where
+ * e4_default_gtk.css's own more-specific id+class rules would otherwise
+ * win and repaint them back to stock colors -- main-toolbar is already
+ * the same color via the plain .MTrimBar rule and is listed mostly for
+ * clarity, but the status line (bottom trim,
+ * `.MTrimBar#org-eclipse-ui-trim-status` in e4_default_gtk.css) genuinely
+ * needs it: without this id here it falls back to the stock secondary
+ * background instead of the palette. */
 .MTrimmedWindow,
 .MTrimBar,
-.MTrimBar#org-eclipse-ui-main-toolbar {
+.MTrimBar#org-eclipse-ui-main-toolbar,
+.MTrimBar#org-eclipse-ui-trim-status {
 	background-color: #F4F1FA;
 }
 
@@ -42,6 +52,60 @@ Link {
 	swt-selected-tab-fill: #FFFFFF #E7DEF8 100% 100%;
 }
 
+/* e4-light_tabstyle.css (pulled in transitively via e4_basestyle.css, which
+ * e4_default_gtk.css imports) paints the tab-content-pane sliver directly
+ * below the tab row via `.MPartStack > Composite` -- a higher-specificity
+ * selector (class + child combinator) than a bare property on `.MPartStack`
+ * would be, and it was left at the stock inactive/active tab-end colors.
+ * Match it to our own gradient end colors so that sliver doesn't show up as
+ * a stray stock-colored line under every tab strip. */
+.MPartStack > Composite {
+	background-color: #EFE7FA;
+}
+
+.MPartStack.active > Composite {
+	background-color: #E7DEF8;
+}
+
+/* The editor area's CTabFolder is targeted directly by ID in the imported
+ * e4_default_gtk.css (`#org-eclipse-ui-editorss CTabFolder { ... }`,
+ * `#org-eclipse-ui-editorss CTabItem[:selected] { ... }`) with an
+ * id+type selector that outranks our plain `.MPartStack` class rule above --
+ * so without this, editor tabs specifically fall back to stock white/grey
+ * (#ffffff / #f8f8f8 / #e5e5e5) fill and outline while every other tab
+ * strip (views, Console/Problems/etc.) correctly picks up the palette.
+ * Restate the same values here at matching (id-scoped) specificity so the
+ * editor tab strip -- the single most-looked-at tab area -- matches too. */
+#org-eclipse-ui-editorss CTabFolder {
+	swt-selected-tab-fill: #FFFFFF #EFE7FA 100% 100%;
+	swt-unselected-tabs-color: #E9E3F5;
+	swt-outer-keyline-color: #D8CDEF;
+	swt-inner-keyline-color: #FFFFFF;
+	swt-tab-outline: #C9B8ED;
+	swt-tab-outer-keyline: #D8CDEF;
+	swt-unselected-hot-tab-color-background: #F0EBFA;
+}
+
+#org-eclipse-ui-editorss CTabFolder.active {
+	swt-selected-tab-fill: #FFFFFF #E7DEF8 100% 100%;
+}
+
+#org-eclipse-ui-editorss CTabItem {
+	background-color: #E9E3F5;
+}
+
+#org-eclipse-ui-editorss CTabItem:selected {
+	background-color: #FFFFFF;
+}
+
+/* An MArea that collapses to a single stack can render as a bare
+ * `CTabFolder.MArea` instead of the `Composite.MArea` case handled below --
+ * same idea as the editor-tabs case above, just for the editor SURFACE
+ * background rather than tab colors. */
+CTabFolder.MArea {
+	background-color: #FFFFFF;
+}
+
 .View Composite,
 .View Tree,
 .View Table,
@@ -56,6 +120,82 @@ Composite.MArea {
 .View ToolBar ToolItem {
 	background-color: #F0EBFA;
 }
+
+/* ---- Perspective switcher -----------------------------------------------
+ * Top-right, per plugin_customization.ini's DOCK_PERSPECTIVE_BAR=topRight.
+ * It's just a plain Composite+ToolBar dropped into the trim with no CSS
+ * class/id of its own (confirmed: PerspectiveSwitcher.java sets no
+ * setData/CSS class on its Composite or ToolBar), and plain SWT
+ * Composites/ToolBars on GTK paint their own native background rather than
+ * transparently showing the parent's unless told to inherit -- so without
+ * this it stands out against the rest of the (already-themed) trim. */
+.MTrimBar Composite,
+.MTrimBar ToolBar {
+	background-color: inherit;
+}
+
+/* UNCERTAIN: the perspective switcher's per-perspective entries are
+ * SWT.RADIO ToolItems, which GTK frequently draws natively (chrome, hover/
+ * pressed states) regardless of `background-color` -- if the switcher
+ * still visually stands out against the trim after rebuild, that's the
+ * same native-toolbar-chrome limitation CLAUDE.md's Theming section
+ * already calls out for the main toolbar, not a wrong selector here; it
+ * would need a renderer-level fix (out of scope for this CSS pass). */
+
+/* ---- Dialogs, wizards & preference pages -------------------------------
+ * These are plain SWT Shells (Dialog / TitleAreaDialog / WizardDialog /
+ * the preferences dialog) that sit entirely outside the MPart/MTrimBar
+ * model above, and JFace doesn't tag their Composites/Buttons with any
+ * theme-specific CSS class or id we could target more precisely. The
+ * platform's own production dark theme
+ * (css/dark/e4-dark_globalstyle.css, shipped in this same
+ * org.eclipse.ui.themes bundle) reaches dialogs/wizards the same way: a
+ * bare `Shell` rule plus generic widget-type selectors. Mirrored here with
+ * our palette instead of dark colors. */
+Shell {
+	background-color: #F4F1FA;
+}
+
+Shell Composite,
+Shell Group,
+Shell TabFolder,
+Shell CTabFolder,
+Shell MessageLine {
+	background-color: #F4F1FA;
+}
+
+Shell Text,
+Shell StyledText[style~='SWT.READ_ONLY'],
+Shell Combo,
+Shell CCombo,
+Shell List,
+Shell Tree,
+Shell Table {
+	background-color: #FFFFFF;
+}
+
+/* UNCERTAIN: GTK very often draws SWT.PUSH Button chrome natively and
+ * ignores background-color entirely (this is the same class of limitation
+ * as the toolbar/perspective-switcher notes above) -- if OK/Cancel/
+ * Finish/<Back/Next> buttons in dialogs and wizards still look stock grey
+ * after rebuild, that's expected and not a wrong selector; check first
+ * during the visual pass. */
+Shell Button[style~='SWT.PUSH'] {
+	background-color: #FAF8FD;
+}
+
+/* Notification / background-job progress popups (bottom-right toasts) are
+ * built on org.eclipse.jface.notifications.AbstractNotificationPopup,
+ * itself just a Shell containing plain, CSS-reachable Composites -- so the
+ * `Shell` / `Shell Composite` rules above already cover its title bar and
+ * border area for free, no dedicated selector needed. One confirmed
+ * exception: AbstractNotificationPopup#createContents() hardcodes
+ * `innerContent.setBackground(display.getSystemColor(SWT.COLOR_WHITE))`
+ * directly in Java for the inner content composite specifically, which no
+ * CSS rule can override -- so the popup's body will stay plain white
+ * regardless (this happens to already match our #FFFFFF "surface" color,
+ * so it's not expected to look out of place, just worth knowing it's
+ * Java-hardcoded rather than themed). */
 
 * {
 	font-family: 'Cantarell', 'Noto Sans', sans-serif;

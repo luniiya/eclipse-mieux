@@ -51,6 +51,32 @@ rm -rf "${INSTALL_DIR}"
 mkdir -p "$(dirname "${INSTALL_DIR}")"
 cp -a "${SRC_DIR}" "${INSTALL_DIR}"
 
+# Pin the workspace and platform log to fixed paths outside INSTALL_DIR, so
+# `rm -rf "${INSTALL_DIR}"` above (which runs on every reinstall) never wipes
+# the remembered workspace or an install-level log, and "check the log" is
+# always the same path regardless of what's been rebuilt since. See
+# CLAUDE.md's "Logs & crash diagnostics" section.
+ECLIPSE_INI="${INSTALL_DIR}/eclipse.ini"
+WORKSPACE_DIR="${HOME}/.local/share/eclipse-mieux/workspace"
+STATE_DIR="${HOME}/.local/state/eclipse-mieux"
+mkdir -p "${WORKSPACE_DIR}" "${STATE_DIR}"
+if [[ -f "${ECLIPSE_INI}" ]] && ! grep -q "osgi.logfile" "${ECLIPSE_INI}"; then
+    echo "==> Pinning workspace/log paths in ${ECLIPSE_INI}"
+    awk -v ws="${WORKSPACE_DIR}" -v log="${STATE_DIR}/eclipse.log" '
+        /^-vmargs$/ && !done {
+            print "-data"
+            print ws
+            print "-consoleLog"
+            print $0
+            print "-Dosgi.logfile=" log
+            done = 1
+            next
+        }
+        { print }
+    ' "${ECLIPSE_INI}" > "${ECLIPSE_INI}.tmp"
+    mv "${ECLIPSE_INI}.tmp" "${ECLIPSE_INI}"
+fi
+
 mkdir -p "$(dirname "${BIN_LINK}")"
 ln -sf "${INSTALL_DIR}/eclipse" "${BIN_LINK}"
 

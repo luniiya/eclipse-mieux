@@ -167,3 +167,39 @@ Window > Preferences > General > Appearance.
   the build is slow and can be fragile — don't be surprised if a fresh
   aggregator checkout needs troubleshooting network/version issues the first
   time through.
+
+## Logs & crash diagnostics
+
+When something misbehaves (freeze, crash, wrong UI) — **this is the path to
+check/report first**, no setup needed. `scripts/install.sh` patches
+`eclipse.ini` on every install to pin these to fixed locations *outside*
+`~/.local/opt/eclipse-mieux` (which install.sh `rm -rf`'s on every
+reinstall), so they survive rebuilds and are always the same path:
+
+- **`~/.local/share/eclipse-mieux/workspace/.metadata/.log`** — the main
+  platform log (errors, stack traces, plugin failures). The UI freeze
+  monitor (`org.eclipse.ui.monitoring`, on by default here) also logs here:
+  any freeze ≥500ms gets an `!ENTRY org.eclipse.ui.monitoring` block with a
+  full thread-dump sample once the UI recovers — usually the fastest way to
+  diagnose a "it froze for a bit" report. Paste the relevant `!ENTRY`/
+  `!MESSAGE`/`!STACK` block, not the whole file.
+- **`~/.local/state/eclipse-mieux/eclipse.log`** — a workspace-independent
+  mirror of the same platform log (`-Dosgi.logfile`), in case `-data` is
+  ever overridden or the workspace changes.
+
+**If the IDE is still frozen right now** (not recovered), the log above
+won't have anything yet — the freeze monitor only logs *after* the UI
+thread becomes responsive again. Grab a live thread dump instead:
+
+```bash
+jstack -l "$(pgrep -f equinox.launcher)"   # or: jcmd <pid> Thread.print
+```
+
+Look at the thread named `"main"` — SWT/GTK is single-threaded, so that's
+the UI thread. `RUNNABLE` stuck in a native call, or `BLOCKED`/`WAITING` on
+a lock another thread holds, is the interesting case; parked in
+`Display.sleep()` means it's just idle, not hung.
+
+The general workflow: hit a bug → grab the relevant log excerpt (or a
+thread dump if still frozen) → hand it to Claude along with what you were
+doing → Claude fixes it → `scripts/install.sh` → retest.

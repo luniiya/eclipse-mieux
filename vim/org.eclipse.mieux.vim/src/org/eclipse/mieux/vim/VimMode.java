@@ -33,6 +33,9 @@ import org.eclipse.swt.widgets.Caret;
 import org.eclipse.ui.IEditorPart;
 import org.eclipse.ui.ISaveablePart;
 import org.eclipse.ui.IWorkbenchPage;
+import org.eclipse.ui.IWorkbenchPartSite;
+import org.eclipse.ui.contexts.IContextActivation;
+import org.eclipse.ui.contexts.IContextService;
 import org.eclipse.ui.texteditor.IEditorStatusLine;
 
 /**
@@ -59,16 +62,25 @@ import org.eclipse.ui.texteditor.IEditorStatusLine;
  * u / Ctrl+R (undo/redo), i I a A o O (enter Insert), v V Ctrl+V (Visual /
  * Visual Line / Visual Block, the last via SWT's native
  * {@code StyledText.setBlockSelection}) with d/c/y/x/~ acting on the
- * selection (block-mode d/c/y/~ act per-column across the block's lines),
+ * selection (block-mode d/c/y/~ act per-column across the block's lines;
+ * block-mode I/A enters Insert once on the block's first line and replays
+ * what was typed at the same column on every other line, skipping ones too
+ * short to reach it - see {@link #beginBlockInsert}/{@link #endBlockInsert}),
  * p/P (system-clipboard paste), / ? n N (search via
- * {@link FindReplaceDocumentAdapter}), and a small set of ":" ex-commands
+ * {@link FindReplaceDocumentAdapter}, with matches highlighted - "hlsearch" -
+ * until a new search replaces them or :noh/:nohlsearch clears them; see
+ * {@link #applySearchHighlights}), and a small set of ":" ex-commands
  * (see {@link #executeExCommand}) entered through a Spotlight-style popup.
  * Count prefixes (e.g. 3dw, 5j) are supported throughout. A rounded-rectangle
  * badge in the bottom-right corner of the editor shows the current mode;
  * double-clicking it toggles a real {@link Mode#DISABLED} mode in which the
- * editor behaves exactly like stock Eclipse. Not implemented: named
- * registers (everything is the system clipboard), macros, the "." repeat
- * command, and block-mode I/A (block-insert replay across lines).
+ * editor behaves exactly like stock Eclipse. While a mode that captures raw
+ * keystrokes is active (Normal/Visual*), the plugin also activates an
+ * {@link IContextService} context (see {@link #setMode}) that shadows a
+ * couple of Eclipse's own keybindings (Paste on M1+V, Redo on M1+R) that
+ * would otherwise intercept those keys before they ever reach this class.
+ * Not implemented: named registers (everything is the system clipboard),
+ * macros, and the "." repeat command.
  */
 public class VimMode implements VerifyKeyListener {
 
@@ -94,8 +106,31 @@ public class VimMode implements VerifyKeyListener {
 	private boolean searchForward = true;
 	private String lastSearch;
 
+	// "hlsearch" state: every match of the last executed search, highlighted
+	// with a background colour on the widget until :noh/:nohlsearch clears it
+	// or a new search replaces it. searchHighlights is the state itself
+	// (what tests assert against); savedHighlightStyles holds each match's
+	// pre-highlight StyleRange (or null) so clearing restores the widget to
+	// exactly what it looked like before rather than fighting whatever the
+	// syntax-highlighting reconciler thinks belongs there.
+	private final List<IRegion> searchHighlights = new ArrayList<>();
+	private final List<StyleRange> savedHighlightStyles = new ArrayList<>();
+	private final Color searchHighlightColor;
+
 	private int caret; // current cursor offset, authoritative while in Visual mode
 	private int visualAnchor;
+
+	// Block-mode I/A (see beginBlockInsert()/endBlockInsert()): while
+	// blockInsertActive is true, handleInsert's Escape path captures
+	// whatever was typed since blockInsertStartOffset and replays it at
+	// blockInsertTargetCol on every line in [blockInsertTopLine + 1,
+	// blockInsertBottomLine], instead of the normal single-cursor Insert
+	// mode exit.
+	private boolean blockInsertActive;
+	private int blockInsertStartOffset;
+	private int blockInsertTopLine;
+	private int blockInsertBottomLine;
+	private int blockInsertTargetCol;
 
 	// Block-vs-line caret (see updateCaretAppearance()): the widget's own
 	// caret is left alone for Insert mode; Normal/Visual swap in a custom,
@@ -112,6 +147,16 @@ public class VimMode implements VerifyKeyListener {
 	private final ModeBadge modeBadge;
 	private final CommandPopup commandPopup;
 
+	// Context activated (via IContextService) while in a mode that captures
+	// raw keystrokes (Normal/Visual*), so the plugin.xml-declared "no
+	// command" bindings for M1+V / M1+R in that context actually shadow
+	// Eclipse's own Paste/Redo bindings and let the KeyDown reach us - see
+	// setMode()/updateCaptureContext(). A null contextService (e.g. under
+	// test, with no real IWorkbenchPartSite) just makes this a no-op.
+	private static final String CAPTURE_CONTEXT_ID = "org.eclipse.mieux.vim.context.capture"; //$NON-NLS-1$
+	private final IContextService contextService;
+	private IContextActivation captureContextActivation;
+
 	public VimMode(IEditorPart editor, ITextViewer viewer) {
 		this.editor = editor;
 		this.viewer = viewer;
@@ -121,16 +166,21 @@ public class VimMode implements VerifyKeyListener {
 		this.caret = safeOffset(viewer.getSelectedRange().x);
 		this.styledText = viewer.getTextWidget();
 		this.insertCaret = styledText != null ? styledText.getCaret() : null;
+		this.searchHighlightColor = styledText != null ? new Color(styledText.getDisplay(), 255, 230, 90) : null;
 		this.modeBadge = styledText != null ? new ModeBadge(styledText, this::toggleDisabled) : null;
 		this.commandPopup = styledText != null ? new CommandPopup(styledText) : null;
+		IWorkbenchPartSite site = editor.getSite();
+		this.contextService = site != null ? site.getService(IContextService.class) : null;
 		updateStatusLine();
 		updateCaretAppearance();
+		updateCaptureContext(); // mode starts as NORMAL, which captures keys
 	}
 
 	public void dispose() {
 		if (viewer instanceof ITextViewerExtension ext) {
 			ext.removeVerifyKeyListener(this);
 		}
+		deactivateCaptureContext();
 		if (styledText != null && !styledText.isDisposed()) {
 			styledText.setCaret(insertCaret);
 		}
@@ -139,6 +189,9 @@ public class VimMode implements VerifyKeyListener {
 		}
 		if (blockCaretImage != null && !blockCaretImage.isDisposed()) {
 			blockCaretImage.dispose();
+		}
+		if (searchHighlightColor != null && !searchHighlightColor.isDisposed()) {
+			searchHighlightColor.dispose();
 		}
 		if (modeBadge != null) {
 			modeBadge.dispose();
@@ -151,7 +204,7 @@ public class VimMode implements VerifyKeyListener {
 	/** Double-click on the mode badge: toggle Vim mode fully on/off. */
 	private void toggleDisabled() {
 		if (mode == Mode.DISABLED) {
-			mode = Mode.NORMAL;
+			setMode(Mode.NORMAL);
 			caret = safeOffset(viewer.getSelectedRange().x);
 		} else {
 			if (mode == Mode.VISUAL_BLOCK && styledText != null && !styledText.isDisposed()) {
@@ -159,10 +212,54 @@ public class VimMode implements VerifyKeyListener {
 			}
 			resetPending();
 			searchBuffer = null;
-			mode = Mode.DISABLED;
+			setMode(Mode.DISABLED);
 		}
 		updateStatusLine();
 		updateCaretAppearance();
+	}
+
+	// ------------------------------------------------------------------
+	// Mode transitions / IContextService wiring
+	// ------------------------------------------------------------------
+
+	/**
+	 * Sets {@link #mode} and keeps the {@code org.eclipse.mieux.vim.context.capture}
+	 * context (declared in plugin.xml) in sync with it - every mode
+	 * transition in this class must go through here rather than assigning
+	 * {@link #mode} directly, or the M1+V/M1+R unbind bindings in that
+	 * context won't track Insert-mode entry/exit correctly.
+	 */
+	private void setMode(Mode newMode) {
+		mode = newMode;
+		updateCaptureContext();
+	}
+
+	/** Activates or deactivates the capture context based on the current {@link #mode}. Idempotent either way. */
+	private void updateCaptureContext() {
+		boolean capturing = switch (mode) {
+			case NORMAL, VISUAL, VISUAL_LINE, VISUAL_BLOCK -> true;
+			case INSERT, DISABLED -> false;
+		};
+		if (capturing) {
+			activateCaptureContext();
+		} else {
+			deactivateCaptureContext();
+		}
+	}
+
+	private void activateCaptureContext() {
+		if (captureContextActivation != null || contextService == null) {
+			return; // already active, or no service (e.g. under test) to activate it with
+		}
+		captureContextActivation = contextService.activateContext(CAPTURE_CONTEXT_ID);
+	}
+
+	private void deactivateCaptureContext() {
+		if (captureContextActivation == null || contextService == null) {
+			return;
+		}
+		contextService.deactivateContext(captureContextActivation);
+		captureContextActivation = null;
 	}
 
 	// ------------------------------------------------------------------
@@ -206,8 +303,15 @@ public class VimMode implements VerifyKeyListener {
 		if (event.keyCode == SWT.ESC) {
 			event.doit = false;
 			caret = safeOffset(viewer.getSelectedRange().x);
-			// real vim moves the cursor back one column when leaving Insert mode
-			caret = clampToLine(caret - 1, lineOf(caret));
+			if (blockInsertActive) {
+				// block I/A: replay what was typed across the rest of the block,
+				// then land back where the block insert started - not the usual
+				// "one column back from wherever insert ended" single-cursor rule.
+				endBlockInsert();
+			} else {
+				// real vim moves the cursor back one column when leaving Insert mode
+				caret = clampToLine(caret - 1, lineOf(caret));
+			}
 			enterNormal();
 		}
 		// anything else: let StyledText handle it natively
@@ -426,7 +530,7 @@ public class VimMode implements VerifyKeyListener {
 
 	private void enterVisual(Mode visualMode) {
 		visualAnchor = caret;
-		mode = visualMode;
+		setMode(visualMode);
 		if (visualMode == Mode.VISUAL_BLOCK && styledText != null && !styledText.isDisposed()) {
 			styledText.setBlockSelection(true);
 		}
@@ -450,7 +554,7 @@ public class VimMode implements VerifyKeyListener {
 			if (mode == Mode.VISUAL_BLOCK) {
 				enterNormalFromVisual();
 			} else {
-				mode = Mode.VISUAL_BLOCK;
+				setMode(Mode.VISUAL_BLOCK);
 				if (styledText != null && !styledText.isDisposed()) {
 					styledText.setBlockSelection(true);
 				}
@@ -502,7 +606,7 @@ public class VimMode implements VerifyKeyListener {
 				if (mode == Mode.VISUAL_BLOCK && styledText != null && !styledText.isDisposed()) {
 					styledText.setBlockSelection(false);
 				}
-				mode = Mode.VISUAL_LINE;
+				setMode(Mode.VISUAL_LINE);
 				updateSelection();
 				updateStatusLine();
 			}
@@ -523,6 +627,18 @@ public class VimMode implements VerifyKeyListener {
 					int start = selectionStart();
 					deleteSelection(doc);
 					enterInsert(start);
+				}
+			}
+			case 'I' -> {
+				// Real Vim only gives block-visual its own I - in charwise/linewise
+				// Visual, I isn't mapped, so leave those to the default/ignore case.
+				if (mode == Mode.VISUAL_BLOCK) {
+					beginBlockInsert(doc, false);
+				}
+			}
+			case 'A' -> {
+				if (mode == Mode.VISUAL_BLOCK) {
+					beginBlockInsert(doc, true);
 				}
 			}
 			case 'y' -> {
@@ -570,14 +686,19 @@ public class VimMode implements VerifyKeyListener {
 		if (mode == Mode.VISUAL_BLOCK && styledText != null && !styledText.isDisposed()) {
 			styledText.setBlockSelection(false);
 		}
-		mode = Mode.NORMAL;
+		setMode(Mode.NORMAL);
 		resetPending();
 		setCaret(caret);
 		updateStatusLine();
 	}
 
+	// VISUAL_LINE line-alignment is selectionStartLineAligned()'s job, not
+	// this one's - both ternary arms here used to be identical (a dead
+	// branch), so this is just the raw offset minimum. Confirmed safe: every
+	// caller (the non-block c/s and y cases in handleVisual) only wants the
+	// smaller raw offset to park the caret on, never a line-aligned one.
 	private int selectionStart() {
-		return mode == Mode.VISUAL_LINE ? Math.min(caret, visualAnchor) : Math.min(caret, visualAnchor);
+		return Math.min(caret, visualAnchor);
 	}
 
 	private int selectionEndExclusive(IDocument doc) throws BadLocationException {
@@ -655,6 +776,70 @@ public class VimMode implements VerifyKeyListener {
 
 	private void yankBlockSelection(IDocument doc) throws BadLocationException {
 		copyToClipboard(blockText(doc, blockColumns()));
+	}
+
+	// ------------------------------------------------------------------
+	// Block-mode I/A: enter Insert once, at a fixed column on the block's
+	// first line, then replay whatever got typed at that same column on
+	// every other line the block spanned (endBlockInsert(), called from
+	// handleInsert's Escape path). A simple fixed right-edge column for A -
+	// not Vim's $-extended "ragged right edge" mode - is an accepted
+	// simplification here.
+	// ------------------------------------------------------------------
+
+	private void beginBlockInsert(IDocument doc, boolean atRightEdge) {
+		int[] cols = blockColumns(); // {topLine, bottomLine, leftCol, rightCol}
+		int topLine = cols[0];
+		int targetCol = atRightEdge ? cols[3] + 1 : cols[2];
+		int ls = lineStart(doc, topLine);
+		int lineLen = Math.max(0, lineEnd(doc, topLine) - ls + 1);
+		// The block's top line always actually reaches leftCol (it's one of
+		// the two endpoints that defined the column range), but for A's
+		// right edge it may not - clamp rather than run past the line.
+		int insertAt = ls + Math.min(targetCol, lineLen);
+
+		if (styledText != null && !styledText.isDisposed()) {
+			styledText.setBlockSelection(false);
+		}
+		enterInsert(insertAt); // clears blockInsertActive as a side effect - set it after
+		blockInsertActive = true;
+		blockInsertStartOffset = insertAt;
+		blockInsertTopLine = topLine;
+		blockInsertBottomLine = cols[1];
+		blockInsertTargetCol = targetCol;
+	}
+
+	/** Called from handleInsert's Escape path when {@link #blockInsertActive}: replays the just-typed text at {@link #blockInsertTargetCol} on every other line of the original block, skipping (not padding) lines too short to reach that column. */
+	private void endBlockInsert() {
+		IDocument doc = document();
+		String inserted = "";
+		try {
+			if (caret > blockInsertStartOffset) {
+				inserted = doc.get(blockInsertStartOffset, caret - blockInsertStartOffset);
+			}
+		} catch (BadLocationException e) {
+			VimPlugin.log(e);
+		}
+		blockInsertActive = false;
+		// Multi-line typing (the user pressed Enter mid-insert) doesn't have
+		// a sane per-column replay - skip the replay rather than corrupt
+		// other lines, matching this method's "don't pad/crash" contract.
+		if (!inserted.isEmpty() && inserted.indexOf('\n') < 0 && inserted.indexOf('\r') < 0) {
+			// bottom-to-top so each edit's offsets stay valid for the lines above it
+			for (int line = blockInsertBottomLine; line > blockInsertTopLine; line--) {
+				try {
+					int ls = lineStart(doc, line);
+					int lineLen = Math.max(0, lineEnd(doc, line) - ls + 1);
+					if (blockInsertTargetCol > lineLen) {
+						continue; // too short to reach the target column - skip, don't pad
+					}
+					doc.replace(ls + blockInsertTargetCol, 0, inserted);
+				} catch (BadLocationException e) {
+					VimPlugin.log(e);
+				}
+			}
+		}
+		caret = safeOffset(blockInsertStartOffset);
 	}
 
 	private void toggleCaseBlockSelection(IDocument doc) throws BadLocationException {
@@ -978,6 +1163,7 @@ public class VimMode implements VerifyKeyListener {
 		if (event.character == SWT.CR || event.character == SWT.LF) {
 			lastSearch = searchBuffer.toString();
 			searchBuffer = null;
+			applySearchHighlights(lastSearch); // replaces any highlight from a previous search
 			runSearch(lastSearch, searchForward);
 			return;
 		}
@@ -1027,6 +1213,79 @@ public class VimMode implements VerifyKeyListener {
 		} finally {
 			updateStatusLine();
 		}
+	}
+
+	// ------------------------------------------------------------------
+	// "hlsearch": every match of the current search, highlighted until a
+	// new search replaces it or :noh/:nohlsearch clears it.
+	// ------------------------------------------------------------------
+
+	/** Recomputes every match of {@code pattern} across the whole document and highlights them, replacing whatever was highlighted before. Uses the same literal, case-sensitive semantics as n/N ({@link #runSearch}). */
+	private void applySearchHighlights(String pattern) {
+		clearSearchHighlights();
+		if (pattern == null || pattern.isEmpty()) {
+			return;
+		}
+		IDocument doc = document();
+		try {
+			FindReplaceDocumentAdapter adapter = new FindReplaceDocumentAdapter(doc);
+			int from = 0;
+			int docLen = doc.getLength();
+			while (from <= docLen) {
+				IRegion region = adapter.find(from, pattern, true, true, false, false);
+				if (region == null) {
+					break;
+				}
+				searchHighlights.add(region);
+				from = region.getOffset() + Math.max(1, region.getLength());
+			}
+		} catch (BadLocationException e) {
+			VimPlugin.log(e);
+		}
+		paintSearchHighlights();
+	}
+
+	/** Applies {@link #searchHighlights} to the widget as background-colour StyleRanges, saving each match's pre-highlight range so {@link #clearSearchHighlights()} can restore it exactly. */
+	private void paintSearchHighlights() {
+		if (styledText == null || styledText.isDisposed() || searchHighlightColor == null) {
+			return;
+		}
+		for (IRegion region : searchHighlights) {
+			try {
+				StyleRange original = styledText.getStyleRangeAtOffset(region.getOffset());
+				savedHighlightStyles.add(original);
+				StyleRange hl = original != null ? (StyleRange) original.clone() : new StyleRange();
+				hl.start = region.getOffset();
+				hl.length = region.getLength();
+				hl.background = searchHighlightColor;
+				styledText.setStyleRange(hl);
+			} catch (IllegalArgumentException | SWTException e) {
+				// offset momentarily out of sync with the widget - the region still
+				// counts toward hlsearch state, just skip this match's paint
+				savedHighlightStyles.add(null);
+			}
+		}
+	}
+
+	/** Clears hlsearch state and restores each match's pre-highlight style on the widget (called by :noh/:nohlsearch, and internally before a new search's matches replace the old ones). */
+	private void clearSearchHighlights() {
+		if (styledText != null && !styledText.isDisposed()) {
+			for (int i = 0; i < searchHighlights.size() && i < savedHighlightStyles.size(); i++) {
+				IRegion region = searchHighlights.get(i);
+				StyleRange original = savedHighlightStyles.get(i);
+				try {
+					if (original != null) {
+						styledText.setStyleRange(original);
+					} else {
+						styledText.setStyleRange(new StyleRange(region.getOffset(), region.getLength(), null, null));
+					}
+				} catch (IllegalArgumentException | SWTException e) {
+					// offset momentarily out of sync with the widget - nothing to restore
+				}
+			}
+		}
+		searchHighlights.clear();
+		savedHighlightStyles.clear();
 	}
 
 	// ------------------------------------------------------------------
@@ -1275,9 +1534,13 @@ public class VimMode implements VerifyKeyListener {
 	}
 
 	private void enterInsert(int at) {
+		// every non-block-insert entry point routes through here, so this is
+		// also where a stale blockInsertActive gets cleared; beginBlockInsert()
+		// re-sets it right after calling this.
+		blockInsertActive = false;
 		caret = safeOffset(at);
 		setCaret(caret);
-		mode = Mode.INSERT;
+		setMode(Mode.INSERT);
 		resetPending();
 		updateStatusLine();
 	}
@@ -1364,7 +1627,7 @@ public class VimMode implements VerifyKeyListener {
 				case "w" -> doSave();
 				case "q", "q!" -> closeEditor();
 				case "wq", "x" -> { doSave(); closeEditor(); }
-				case "noh", "nohlsearch" -> lastSearch = null;
+				case "noh", "nohlsearch" -> { lastSearch = null; clearSearchHighlights(); }
 				default -> {
 					if (cmd.matches("\\d+")) {
 						gotoLine(Integer.parseInt(cmd));
