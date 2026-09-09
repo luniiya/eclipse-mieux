@@ -5,7 +5,7 @@
 # This is the "rebuild and reinstall" entry point: just re-run this script
 # any time the source changes.
 #
-# Usage: scripts/install.sh [--no-build] [--with-tests]
+# Usage: scripts/install.sh [--no-build] [--with-tests] [--incremental]
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=common.sh

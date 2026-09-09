@@ -8,6 +8,7 @@ import org.eclipse.mieux.mcp.server.registry.Tool;
 import org.eclipse.mieux.mcp.server.registry.ToolExecutionException;
 import org.eclipse.mieux.mcp.server.registry.ToolRegistry;
 import org.eclipse.swt.SWT;
+import org.eclipse.swt.custom.StyledText;
 import org.eclipse.swt.widgets.Button;
 import org.eclipse.swt.widgets.Combo;
 import org.eclipse.swt.widgets.Control;
@@ -19,6 +20,7 @@ import org.eclipse.swt.widgets.ToolItem;
 import org.eclipse.swt.widgets.Tree;
 import org.eclipse.swt.widgets.TreeItem;
 import org.eclipse.swt.widgets.Widget;
+import org.eclipse.ui.PlatformUI;
 
 /** MCP tool implementations backed by the SWT widget tree. */
 final class UiTools {
@@ -35,6 +37,7 @@ final class UiTools {
 		registry.register(new SelectTool(automation));
 		registry.register(new ExpandTool(automation));
 		registry.register(new InvokeMenuTool(automation));
+		registry.register(new RestartIdeTool(automation));
 	}
 
 	private abstract static class UiTool implements Tool {
@@ -80,23 +83,31 @@ final class UiTools {
 			long id = id(arguments);
 			Widget widget = automation.requireObject(arguments);
 			if (!isEnabled(widget)) throw new ToolExecutionException("Widget is disabled: " + id);
-			click(widget);
-			return Json.object("id", id, "clicked", true);
+			automation.defer(() -> click(widget));
+			return Json.object("id", id, "clicked", true, "queued", true);
 		}
 	}
 
 	private static final class SetTextTool extends UiTool {
 		SetTextTool(UiAutomation automation) { super(automation); }
 		@Override public String name() { return "ui_set_text"; }
-		@Override public String description() { return "Set the value of a text field or editable combo box from the latest snapshot."; }
-		@Override public Map<String, Object> inputSchema() { return objectSchema(Map.of("id", integerProperty("Text or combo id"), "text", stringProperty("New text")), "id", "text"); }
+		@Override public String description() { return "Set the value of a text field, editable combo box, or text editor."; }
+		@Override public Map<String, Object> inputSchema() { return objectSchema(Map.of("id", integerProperty("Text, combo, or editor id"), "text", stringProperty("New text")), "id", "text"); }
 		@Override Object executeOnUi(Map<String, Object> arguments) throws Exception {
 			long id = id(arguments);
 			String text = string(arguments, "text");
 			Widget widget = automation.requireObject(arguments);
-			if (widget instanceof Text field) field.setText(text);
-			else if (widget instanceof Combo combo) combo.setText(text);
-			else throw new ToolExecutionException("Widget is not a text field or combo: " + id);
+			if (widget instanceof Text field) {
+				field.setText(text);
+				field.notifyListeners(SWT.Modify, new org.eclipse.swt.widgets.Event());
+			} else if (widget instanceof Combo combo) {
+				combo.setText(text);
+				combo.notifyListeners(SWT.Modify, new org.eclipse.swt.widgets.Event());
+			} else if (widget instanceof StyledText editor) {
+				editor.setText(text);
+				editor.notifyListeners(SWT.Modify, new org.eclipse.swt.widgets.Event());
+			}
+			else throw new ToolExecutionException("Widget is not a text field, combo, or editor: " + id);
 			return Json.object("id", id, "value", text);
 		}
 	}
@@ -129,14 +140,23 @@ final class UiTools {
 		@Override Object executeOnUi(Map<String, Object> arguments) throws Exception {
 			long id = id(arguments);
 			Widget widget = automation.requireObject(arguments);
-			int index = selectionIndex(arguments, widget);
+			int index;
+			if (widget instanceof TreeItem item) {
+				TreeItem parentItem = item.getParentItem();
+				item.getParent().setSelection(item);
+				index = parentItem == null ? item.getParent().indexOf(item) : parentItem.indexOf(item);
+			} else if (widget instanceof TableItem item) {
+				item.getParent().setSelection(item);
+				index = item.getParent().indexOf(item);
+			} else {
+				index = selectionIndex(arguments, widget);
+			}
 			if (widget instanceof Combo combo) combo.select(index);
 			else if (widget instanceof org.eclipse.swt.widgets.List list) list.select(index);
 			else if (widget instanceof Tree tree) tree.setSelection(tree.getItem(index));
-			else if (widget instanceof TreeItem item) item.getParent().setSelection(item);
 			else if (widget instanceof Table table) table.setSelection(table.getItem(index));
-			else if (widget instanceof TableItem item) item.getParent().setSelection(item);
-			else throw new ToolExecutionException("Widget is not selectable: " + id);
+			else if (!(widget instanceof TreeItem) && !(widget instanceof TableItem))
+				throw new ToolExecutionException("Widget is not selectable: " + id);
 			Widget parent = widget instanceof TreeItem item ? item.getParent() : widget instanceof TableItem item ? item.getParent() : widget;
 			parent.notifyListeners(SWT.Selection, new org.eclipse.swt.widgets.Event());
 			return Json.object("id", id, "index", index);
@@ -169,8 +189,25 @@ final class UiTools {
 			Widget widget = automation.requireObject(arguments);
 			if (!(widget instanceof MenuItem item)) throw new ToolExecutionException("Widget is not a menu item: " + id);
 			if (!item.isEnabled()) throw new ToolExecutionException("Menu item is disabled: " + id);
-			click(item);
-			return Json.object("id", id, "invoked", true);
+			automation.defer(() -> click(item));
+			return Json.object("id", id, "invoked", true, "queued", true);
+		}
+	}
+
+	private static final class RestartIdeTool extends UiTool {
+		RestartIdeTool(UiAutomation automation) { super(automation); }
+		@Override public String name() { return "ide_restart"; }
+		@Override public String description() {
+			return "Restart the running Eclipse workbench after this MCP response returns; use this instead of opening another Eclipse process.";
+		}
+		@Override public Map<String, Object> inputSchema() { return objectSchema(Map.of()); }
+		@Override Object executeOnUi(Map<String, Object> arguments) {
+			automation.defer(() -> {
+				if (PlatformUI.isWorkbenchRunning()) {
+					PlatformUI.getWorkbench().restart();
+				}
+			});
+			return Json.object("restarting", true, "queued", true);
 		}
 	}
 

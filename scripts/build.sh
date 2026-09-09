@@ -13,7 +13,7 @@
 #      of a separate, unrelated clone
 #   3. runs the Tycho build that materializes the product
 #
-# Usage: scripts/build.sh [--with-tests] [--all-platforms] [-- <extra mvn args>]
+# Usage: scripts/build.sh [--with-tests] [--all-platforms] [--incremental] [-- <extra mvn args>]
 #
 # By default, the products/ build (eclipse-sdk et al.) only materializes and
 # archives THIS host's platform (linux/gtk/x86_64) - not all 8 supported
@@ -28,11 +28,13 @@ source "${SCRIPT_DIR}/common.sh"
 
 WITH_TESTS=0
 ALL_PLATFORMS=0
+INCREMENTAL=0
 EXTRA_ARGS=()
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --with-tests) WITH_TESTS=1; shift ;;
         --all-platforms) ALL_PLATFORMS=1; shift ;;
+        --incremental) INCREMENTAL=1; shift ;;
         --) shift; EXTRA_ARGS+=("$@"); break ;;
         *) EXTRA_ARGS+=("$1"); shift ;;
     esac
@@ -211,13 +213,20 @@ echo "==> Pre-installing eclipse-platform-parent + prereqs to the local Maven re
 mvn -f eclipse-platform-parent/pom.xml clean install -q
 mvn -f eclipse.platform.releng.prereqs.sdk/pom.xml clean install -q
 
-MVN_BASE_ARGS=(clean verify)
+if [[ "${INCREMENTAL}" -eq 1 ]]; then
+    MVN_BASE_ARGS=(verify)
+else
+    MVN_BASE_ARGS=(clean verify)
+fi
 if [[ "${WITH_TESTS}" -eq 0 ]]; then
     MVN_BASE_ARGS+=(-DskipTests)
 fi
 
 echo "==> Building in ${AGGREGATOR_DIR}"
 echo "    (upstream quotes ~10-20 min without tests; first run / this machine may take longer)"
+if [[ "${INCREMENTAL}" -eq 1 ]]; then
+    echo "    incremental mode: retaining existing Tycho target outputs"
+fi
 
 # Tycho's parallel reactor build (--threads N) has a known flaky race: one
 # thread finishes packaging a bundle's jar just as another thread (e.g.

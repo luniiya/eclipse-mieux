@@ -11,8 +11,11 @@ bugs and add features on top instead of just tolerating it.
 
 ```bash
 scripts/install.sh              # build + install + (re)create app launcher
+scripts/install.sh --incremental # faster iteration; reuse unchanged build outputs
 scripts/install.sh --no-build   # reinstall only, skip the rebuild
 scripts/build.sh                # build only, don't touch the install
+scripts/build.sh --incremental  # build changed modules/product without clean
+scripts/update-mcp.sh            # compile/deploy only the MCP bundles; restart IDE after
 ```
 
 **This repo alone does not build a runnable IDE** — it's only the platform
@@ -63,9 +66,9 @@ Run `eclipse-mieux` to launch the GUI directly.
 There used to be a `vim/org.eclipse.mieux.vim` here — a from-scratch native
 vim-mode plugin. Pulled out (still in git history, just not built/shipped any
 more) in favor of vendoring Vrapper (https://marketplace.eclipse.org/content/vrapper-vim)
-instead: mature, EPL-licensed, in-process JFace/SWT-based like our own
-plugin was, no external Vim dependency — see [[eclipse-mieux-vrapper]] for
-where that lives once it's wired in.
+instead: mature, GPLv3-licensed, in-process JFace/SWT-based like our own
+plugin was, no external Vim dependency — see the Vim mode section below for
+its `vim/vrapper` submodule and build wiring.
 
 The rest of what actually ends up in the built IDE (JDT, PDE, SWT, the
 workbench UI) lives in sibling repos under the aggregator, not here — if a
@@ -88,11 +91,11 @@ New top-level module `mcp/` (peer to `runtime/`, `debug/`, `ua/`):
     `tools/call`). Pure Java.
   - `registry/` — `Tool` interface (name, description, JSON schema,
     `execute(args)`) + `ToolRegistry`. Pure Java.
-  - `transport/` — local HTTP+JSON-RPC listener via JDK's built-in
-    `com.sun.net.httpserver` (no new external dep to drag through Tycho).
-    Bound to `127.0.0.1` only, random port, per-launch random bearer token
-    written to a local file — this is real control-surface power, so it's
-    gated by at least that much.
+  - `transport/` — a small HTTP+JSON-RPC listener bound to
+    `127.0.0.1:38573/mcp` with no token; it is only the in-process backend.
+    `scripts/mcp-gateway.py` is the Codex-facing stdio server: it keeps tool
+    discovery available, starts/reuses Eclipse, waits for the backend, and
+    reconnects after an IDE restart without launching duplicates.
   - `ui/` — the SWT-facing part, depends on `org.eclipse.swt`,
     `org.eclipse.ui`, `org.eclipse.jface` (same cross-submodule dependency
     pattern `debug/org.eclipse.debug.ui` already uses — SWT/Workbench source
@@ -101,16 +104,18 @@ New top-level module `mcp/` (peer to `runtime/`, `debug/`, `ua/`):
     - **Widget tree walker**: walks `Display` → `Shell[]` → `Control` tree,
       plus menu bars/context menus, into a JSON node tree (role, label,
       enabled/visible/checked/value/selection, children). Every widget in a
-      snapshot gets an **ephemeral numeric id**, scoped to that snapshot —
-      snapshot, then act using those ids; a fresh snapshot invalidates old
-      ones. Avoids stale-widget-reference bugs.
+      snapshot gets a numeric id stable for the lifetime of the Eclipse
+      process. Taking another snapshot or listing windows does not invalidate
+      existing ids; ids for disposed widgets are rejected and never reused.
     - **Action tools**, all marshalled onto the SWT UI thread via
       `Display.syncExec` (mandatory — SWT is single-threaded): `ui_click`,
       `ui_set_text`, `ui_set_checked`, `ui_select` (combo/list/tree/table),
       `ui_expand` (tree nodes), `ui_invoke_menu`. Plus `ui_list_windows` and
-      `ui_snapshot(shell_id, maxDepth)`.
+      `ui_snapshot(shell_id, maxDepth)`, and `ide_restart` for serialized
+      single-instance workbench restarts.
     - `IStartup` extension boots the HTTP server on workbench start
-      (auto-start by default — loopback + token makes that low-risk).
+      (auto-start by default — the backend is loopback-only and the gateway
+      serializes access).
   - v1 widget scope: **menus & toolbar, dialogs & wizards, trees & tables**.
     Editor text content and full launch/debug control are explicitly out of
     scope for v1.

@@ -10,6 +10,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import org.eclipse.mieux.mcp.server.json.Json;
 import org.eclipse.mieux.mcp.server.registry.ToolExecutionException;
 import org.eclipse.swt.widgets.Button;
+import org.eclipse.swt.custom.StyledText;
 import org.eclipse.swt.widgets.Combo;
 import org.eclipse.swt.widgets.Composite;
 import org.eclipse.swt.widgets.Control;
@@ -39,7 +40,7 @@ final class UiAutomation {
 	private final Display display = Display.getDefault();
 	private final Map<Long, Widget> objects = new LinkedHashMap<>();
 	private final IdentityHashMap<Widget, Long> ids = new IdentityHashMap<>();
-	private long nextId;
+	private long nextId = 1;
 
 	Object call(UiCall operation) throws ToolExecutionException {
 		if (display == null || display.isDisposed()) {
@@ -69,12 +70,22 @@ final class UiAutomation {
 		return result.get();
 	}
 
+	/**
+	 * Queues an interaction for the next SWT event-loop turn. This is necessary
+	 * for actions such as opening Preferences: their selection listener opens a
+	 * modal JFace window and must not run inside the synchronous MCP dispatch
+	 * callback, or the HTTP request cannot return until that window is closed.
+	 */
+	void defer(Runnable operation) {
+		display.asyncExec(operation);
+	}
+
 	private static String message(Throwable error) {
 		return error.getMessage() == null ? error.getClass().getSimpleName() : error.getMessage();
 	}
 
 	Object listWindows() {
-		beginSnapshot();
+		pruneDisposed();
 		List<Object> windows = new ArrayList<>();
 		for (Shell shell : display.getShells()) {
 			if (shell.isDisposed()) {
@@ -97,7 +108,7 @@ final class UiAutomation {
 		if (maxDepth < 0 || maxDepth > 30) {
 			throw new ToolExecutionException("maxDepth must be between 0 and 30");
 		}
-		beginSnapshot();
+		pruneDisposed();
 		long shellId = register(shell);
 		return Json.object("snapshot", nodeForShell(shell, shellId, maxDepth, 0));
 	}
@@ -129,10 +140,16 @@ final class UiAutomation {
 		return number.intValue();
 	}
 
-	private void beginSnapshot() {
-		objects.clear();
-		ids.clear();
-		nextId = 1;
+	/**
+	 * Widget ids identify SWT objects for the lifetime of this Eclipse process.
+	 * Reading another window or taking another snapshot must not invalidate ids
+	 * that the client already discovered; doing so made ordinary snapshot/action
+	 * sequences race-prone and needlessly forced clients to rediscover controls.
+	 * Disposed widgets are removed so the registry cannot retain dead controls.
+	 */
+	private void pruneDisposed() {
+		objects.entrySet().removeIf(entry -> entry.getValue() == null || entry.getValue().isDisposed());
+		ids.entrySet().removeIf(entry -> entry.getKey() == null || entry.getKey().isDisposed());
 	}
 
 	private long register(Widget widget) {
@@ -264,6 +281,7 @@ final class UiAutomation {
 	private static String role(Control control) {
 		if (control instanceof Button) return "button";
 		if (control instanceof Text) return "text";
+		if (control instanceof StyledText) return "texteditor";
 		if (control instanceof Combo) return "combo";
 		if (control instanceof org.eclipse.swt.widgets.List) return "list";
 		if (control instanceof Tree) return "tree";
@@ -290,6 +308,8 @@ final class UiAutomation {
 	private static void addState(Map<String, Object> node, Control control) {
 		if (control instanceof Text text) {
 			node.put("value", text.getText());
+		} else if (control instanceof StyledText editor) {
+			node.put("value", editor.getText());
 		} else if (control instanceof Combo combo) {
 			node.put("value", combo.getText());
 			node.put("selection", combo.getSelectionIndex());
