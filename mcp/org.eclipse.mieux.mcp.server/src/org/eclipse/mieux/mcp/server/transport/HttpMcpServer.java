@@ -22,9 +22,10 @@ import org.eclipse.mieux.mcp.server.protocol.McpMessageHandler;
  *
  * <p>
  * Single endpoint: {@code POST /mcp}, body is one JSON-RPC request, response
- * is the JSON-RPC response (or {@code 204} for a notification). Every request
- * must carry {@code Authorization: Bearer <token>} matching the token this
- * server was constructed with.
+ * is the JSON-RPC response (or {@code 204} for a notification). The default
+ * constructor is intentionally unauthenticated because the listener binds to
+ * loopback only; the token-taking constructor remains available for callers
+ * that want an additional local authentication layer.
  *
  * <p>
  * Deliberately hand-rolled instead of {@code com.sun.net.httpserver}: that
@@ -54,6 +55,15 @@ public class HttpMcpServer implements Closeable {
 			thread.setDaemon(true);
 			return thread;
 		});
+	}
+
+	/**
+	 * Creates a loopback server without bearer-token authentication.
+	 *
+	 * @param handler the MCP request handler
+	 */
+	public HttpMcpServer(McpMessageHandler handler) {
+		this(handler, null);
 	}
 
 	/**
@@ -135,7 +145,7 @@ public class HttpMcpServer implements Closeable {
 			return;
 		}
 		String authHeader = request.headers.getOrDefault("authorization", "");
-		if (!isValidToken(authHeader)) {
+		if (token != null && !isValidToken(authHeader)) {
 			writeResponse(out, 401, "Unauthorized", "text/plain", "unauthorized".getBytes(StandardCharsets.UTF_8));
 			return;
 		}

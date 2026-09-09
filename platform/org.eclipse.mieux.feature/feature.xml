@@ -20,4 +20,12 @@
          id="org.eclipse.mieux.theme"
          version="0.0.0"/>
 
+   <plugin
+         id="org.eclipse.mieux.mcp.server"
+         version="0.0.0"/>
+
+   <plugin
+         id="org.eclipse.mieux.mcp.server.ui"
+         version="0.0.0"/>
+
 </feature>

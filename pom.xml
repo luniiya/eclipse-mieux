@@ -71,6 +71,7 @@
     <module>terminal/</module>
     <module>mcp/org.eclipse.mieux.mcp.server</module>
     <module>mcp/org.eclipse.mieux.mcp.server.tests</module>
+    <module>mcp/org.eclipse.mieux.mcp.server.ui</module>
     <module>theming/org.eclipse.mieux.theme</module>
   </modules>
   <build>

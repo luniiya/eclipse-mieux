@@ -1,0 +1,15 @@
+Manifest-Version: 1.0
+Bundle-ManifestVersion: 2
+Bundle-Name: %Bundle-Name
+Bundle-SymbolicName: org.eclipse.mieux.mcp.server.ui;singleton:=true
+Bundle-Version: 1.0.0.qualifier
+Bundle-Activator: org.eclipse.mieux.mcp.server.ui.McpUiPlugin
+Bundle-Vendor: %Bundle-Vendor
+Bundle-Localization: plugin
+Bundle-RequiredExecutionEnvironment: JavaSE-21
+Require-Bundle: org.eclipse.mieux.mcp.server;bundle-version="1.0.0",
+ org.eclipse.core.runtime,
+ org.eclipse.ui,
+ org.eclipse.swt
+Bundle-ActivationPolicy: lazy
+Automatic-Module-Name: org.eclipse.mieux.mcp.server.ui

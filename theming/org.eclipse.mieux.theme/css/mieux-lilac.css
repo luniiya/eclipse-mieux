@@ -198,16 +198,20 @@ Shell Button[style~='SWT.PUSH'] {
  * Java-hardcoded rather than themed). */
 
 * {
-	font-family: 'Cantarell', 'Noto Sans', sans-serif;
+	font-family: '#org-eclipse-jface-textfont';
 }
 
-/* The blanket `* { font-family }` rule above also matches FontDefinition
- * elements (confirmed live: it was clobbering the text editor's font back
- * to Cantarell, overriding plugin_customization.ini's
- * org.eclipse.jface.textfont preference once the CSS engine (re)applies the
- * theme). Restate the editor font's own fallback chain here at higher
- * (id) specificity so CSS and the preference default agree instead of
- * fighting -- same chain, same order, JetBrainsMono Nerd Font Mono first. */
-FontDefinition#org-eclipse-jface-textfont {
-	font-family: 'JetBrainsMono Nerd Font Mono', 'FiraCode Nerd Font Mono', 'CaskaydiaCove Nerd Font Mono', 'JetBrainsMonoNL Nerd Font Mono', 'MesloLGM Nerd Font Mono', 'FantasqueSansM Nerd Font Mono', 'DejaVu Sans Mono', 'Liberation Mono', 'Bitstream Vera Sans Mono', 'Adwaita Mono', monospace;
+/* Keep every Eclipse font definition on the same monospace family. The
+ * generic JFace definition is resolved from plugin_customization.ini and has
+ * a platform fallback chain; referencing it avoids hard-coding a font that
+ * may not be installed on another machine. */
+FontDefinition#org-eclipse-jface-textfont,
+FontDefinition#org-eclipse-jdt-ui-editors-textfont,
+FontDefinition#org-eclipse-jdt-ui-PropertiesFileEditor-textfont {
+	font-family: '#org-eclipse-jface-textfont';
+}
+
+/* The actual text canvas gets the same resolved family explicitly too. */
+StyledText {
+	font-family: '#org-eclipse-jface-textfont';
 }

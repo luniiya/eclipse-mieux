@@ -232,7 +232,8 @@ trap 'rm -f "${BUILD_LOG}"' EXIT
 
 is_known_parallel_race() {
     grep -q "zip file is empty" "${BUILD_LOG}" || \
-        grep -Eq "org\.eclipse\.sdk\.feature\.group.*could not be found" "${BUILD_LOG}"
+        grep -Eq "org\.eclipse\.sdk\.feature\.group.*could not be found" "${BUILD_LOG}" || \
+        grep -Eq "local-artifacts\.properties.*is missing|Unexpected build result of MavenProject" "${BUILD_LOG}"
 }
 
 for threads in 8 4 2 1; do

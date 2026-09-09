@@ -146,8 +146,8 @@ AGENTS.md).
 ## Theming
 
 Custom E4 CSS workbench theme, `org.eclipse.mieux.theme.lilac` ("Mieux
-Lilac"): pastel lilac/white palette, Cantarell UI font, JetBrainsMono Nerd
-Font Mono as the default editor font, rounded-top editor/view tabs. Set as
+Lilac"): pastel lilac/white palette with a monospace UI/editor font,
+rounded-top editor/view tabs. Set as
 the default via the `cssTheme` product property in both
 `platform/org.eclipse.sdk/plugin.xml` and
 `platform/org.eclipse.platform/plugin.xml`; switchable at runtime via
