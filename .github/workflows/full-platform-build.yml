@@ -1,0 +1,49 @@
+name: Full Platform Product Build
+
+# Builds the actual, runnable Eclipse Mieux SDK product - via scripts/build.sh,
+# which clones eclipse.platform.releng.aggregator as a sibling checkout and
+# assembles the real IDE (this repo alone only builds bundles, not a product,
+# see CLAUDE.md) - for ALL 8 supported platforms.
+#
+# This is deliberately separate from ci.yml: that one delegates to the
+# aggregator's reusable mavenBuild.yml, which only compiles/tests this repo's
+# bundles directly and never runs a product build at all. A full 8-platform
+# product build needs a fresh multi-GB aggregator clone (jdt/pde/swt/ui/
+# equinox submodules) plus a full Tycho reactor build, materializing and
+# archiving every platform - too slow and wasteful to run on every push. So
+# scripts/build.sh defaults to building only the machine's own platform, and
+# this workflow opts into the full matrix explicitly (--all-platforms), run
+# on demand rather than on every commit.
+on:
+  workflow_dispatch:
+
+jobs:
+  build-all-platforms:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout eclipse-mieux
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Java
+        uses: actions/setup-java@dd06d9cba3e5552c54d9f8ea23572deb30010f7c # v6.0.0
+        with:
+          java-version: '25'
+          distribution: 'temurin'
+          cache: 'maven'
+
+      - name: Set up Maven
+        uses: stCarolas/setup-maven@12eb41b233df95d49b0c11fc1b5bc8312e5d4ce0 # v5.1
+        with:
+          maven-version: '3.9.16'
+
+      - name: Build all 8 platforms
+        run: scripts/build.sh --all-platforms
+
+      - name: Upload product archives
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: eclipse-mieux-all-platforms
+          if-no-files-found: error
+          path: |
+            ../eclipse-platform-aggregator/products/eclipse-sdk/target/products/*.tar.gz
+            ../eclipse-platform-aggregator/products/eclipse-sdk/target/products/*.zip

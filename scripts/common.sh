@@ -15,12 +15,22 @@ AGGREGATOR_URL="https://github.com/eclipse-platform/eclipse.platform.releng.aggr
 
 JAVA25_HOME="/usr/lib/jvm/java-25-openjdk"
 
+# True if $1 is a JAVA_HOME for a JDK 25+.
+java_home_is_25_plus() {
+    local jh="$1" ver
+    [[ -x "${jh}/bin/java" ]] || return 1
+    ver="$("${jh}/bin/java" -version 2>&1 | head -n1 | grep -oE '"[0-9]+' | tr -d '"')"
+    [[ -n "${ver}" ]] && (( ver >= 25 ))
+}
+
 setup_java() {
-    if [[ -x "${JAVA25_HOME}/bin/java" ]]; then
+    if [[ -n "${JAVA_HOME:-}" ]] && java_home_is_25_plus "${JAVA_HOME}"; then
+        : # already set up for JDK 25+ (e.g. CI's actions/setup-java) - use as-is
+    elif java_home_is_25_plus "${JAVA25_HOME}"; then
         export JAVA_HOME="${JAVA25_HOME}"
     else
-        echo "error: Java 25 not found at ${JAVA25_HOME}. The aggregator build requires JDK 25+." >&2
-        echo "       Install it with: sudo pacman -S jdk25-openjdk" >&2
+        echo "error: no JDK 25+ found (checked \$JAVA_HOME and ${JAVA25_HOME}). The aggregator build requires JDK 25+." >&2
+        echo "       Install it with: sudo pacman -S jdk25-openjdk (or export JAVA_HOME)" >&2
         exit 1
     fi
     export PATH="${JAVA_HOME}/bin:${PATH}"
