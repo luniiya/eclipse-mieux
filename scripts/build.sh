@@ -13,17 +13,26 @@
 #      of a separate, unrelated clone
 #   3. runs the Tycho build that materializes the product
 #
-# Usage: scripts/build.sh [--with-tests] [-- <extra mvn args>]
+# Usage: scripts/build.sh [--with-tests] [--all-platforms] [-- <extra mvn args>]
+#
+# By default, the products/ build (eclipse-sdk et al.) only materializes and
+# archives THIS host's platform (linux/gtk/x86_64) - not all 8 supported
+# platforms. For local dev/testing that's the only one you can even run, so
+# building+signing+archiving the other 7 every time is pure waste. Pass
+# --all-platforms to restore the full matrix (what CI should use when it
+# actually does a product build - see the products/pom.xml patch below).
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=common.sh
 source "${SCRIPT_DIR}/common.sh"
 
 WITH_TESTS=0
+ALL_PLATFORMS=0
 EXTRA_ARGS=()
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --with-tests) WITH_TESTS=1; shift ;;
+        --all-platforms) ALL_PLATFORMS=1; shift ;;
         --) shift; EXTRA_ARGS+=("$@"); break ;;
         *) EXTRA_ARGS+=("$1"); shift ;;
     esac
@@ -74,6 +83,33 @@ SDK_PRODUCT="${AGGREGATOR_DIR}/products/eclipse-sdk/sdk.product"
 if [[ -f "${SDK_PRODUCT}" ]] && ! grep -q "org.eclipse.mieux.feature" "${SDK_PRODUCT}"; then
     echo "==> Wiring org.eclipse.mieux.feature into ${SDK_PRODUCT}"
     sed -i 's#<feature id="org.eclipse.terminal.feature" installMode="root"/>#<feature id="org.eclipse.terminal.feature" installMode="root"/>\n      <feature id="org.eclipse.mieux.feature" installMode="root"/>#' "${SDK_PRODUCT}"
+fi
+
+# Scope products/ (eclipse-platform, eclipse-sdk, equinox-launcher,
+# equinox-starterkit) to build/materialize/archive THIS host's platform only
+# by default, instead of all 8 environments target-platform-configuration
+# lists in eclipse-platform-parent. That parent list is inherited by every
+# reactor module including org.eclipse.equinox.executable, which genuinely
+# needs ALL platforms' launcher fragments resolvable in ITS OWN target
+# platform regardless of what's being packaged - narrowing it there breaks
+# package-feature (see the note above, learned that the hard way already).
+# products/pom.xml is NOT a parent of equinox.executable though - only of
+# the product modules that actually materialize/archive per-environment - so
+# overriding target-platform-configuration's <environments> there (with
+# combine.self="override" so it fully replaces rather than appends to the
+# inherited list) narrows exactly the wasteful part without touching
+# equinox.executable's own resolution at all.
+#
+# --all-platforms (adds -Pfull-platform-matrix) restores the full 8-platform
+# matrix for whenever a real release/CI build needs it.
+PRODUCTS_POM="${AGGREGATOR_DIR}/products/pom.xml"
+if [[ -f "${PRODUCTS_POM}" ]] && ! grep -q "full-platform-matrix" "${PRODUCTS_POM}"; then
+    echo "==> Scoping ${PRODUCTS_POM} to build the host platform only by default (see full-platform-matrix profile)"
+    python3 "${SCRIPT_DIR}/patch-products-pom-environments.py" "${PRODUCTS_POM}"
+fi
+
+if [[ "${ALL_PLATFORMS}" -eq 1 ]]; then
+    EXTRA_ARGS+=(-Pfull-platform-matrix)
 fi
 
 echo "==> JAVA_HOME=${JAVA_HOME}"
