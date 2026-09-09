@@ -76,8 +76,11 @@ public class HttpMcpServerTest {
 			socket.getOutputStream().write(request.getBytes(StandardCharsets.UTF_8));
 			socket.getOutputStream().flush();
 			socket.setSoTimeout(5000);
-			String statusLine = new java.io.BufferedReader(
-					new java.io.InputStreamReader(socket.getInputStream(), StandardCharsets.UTF_8)).readLine();
+			String statusLine;
+			try (java.io.BufferedReader reader = new java.io.BufferedReader(
+					new java.io.InputStreamReader(socket.getInputStream(), StandardCharsets.UTF_8))) {
+				statusLine = reader.readLine();
+			}
 			assertTrue(statusLine != null && statusLine.contains("400"), "expected a 400 status, got: " + statusLine);
 		}
 	}

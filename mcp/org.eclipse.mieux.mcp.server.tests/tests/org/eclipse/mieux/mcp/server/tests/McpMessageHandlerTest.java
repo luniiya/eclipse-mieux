@@ -24,6 +24,19 @@ public class McpMessageHandlerTest {
 		return (Map<String, Object>) Json.parse(json);
 	}
 
+	// Json.parse()'s values are untyped Object - these two centralize the
+	// unavoidable unchecked casts down from every call site below into one
+	// place each, same as parseObject() above.
+	@SuppressWarnings("unchecked")
+	private static Map<String, Object> asMap(Object value) {
+		return (Map<String, Object>) value;
+	}
+
+	@SuppressWarnings("unchecked")
+	private static List<Object> asList(Object value) {
+		return (List<Object>) value;
+	}
+
 	@Test
 	public void initializeReturnsServerInfo() {
 		McpMessageHandler handler = newHandler(new ToolRegistry());
@@ -33,8 +46,8 @@ public class McpMessageHandlerTest {
 						Json.object())));
 
 		Map<String, Object> parsed = parseObject(response);
-		Map<String, Object> result = (Map<String, Object>) parsed.get("result");
-		Map<String, Object> serverInfo = (Map<String, Object>) result.get("serverInfo");
+		Map<String, Object> result = asMap(parsed.get("result"));
+		Map<String, Object> serverInfo = asMap(result.get("serverInfo"));
 		assertEquals("eclipse-mieux", serverInfo.get("name"));
 		assertEquals(Long.valueOf(1), parsed.get("id"));
 	}
@@ -49,8 +62,8 @@ public class McpMessageHandlerTest {
 				Json.write(Json.object("jsonrpc", "2.0", "id", 2L, "method", "tools/list")));
 
 		Map<String, Object> parsed = parseObject(response);
-		Map<String, Object> result = (Map<String, Object>) parsed.get("result");
-		List<Object> tools = (List<Object>) result.get("tools");
+		Map<String, Object> result = asMap(parsed.get("result"));
+		List<Object> tools = asList(result.get("tools"));
 		assertEquals(1, tools.size());
 	}
 
@@ -64,9 +77,9 @@ public class McpMessageHandlerTest {
 				"params", Json.object("name", "echo", "arguments", Json.object("text", "hi there")))));
 
 		Map<String, Object> parsed = parseObject(response);
-		Map<String, Object> result = (Map<String, Object>) parsed.get("result");
-		List<Object> content = (List<Object>) result.get("content");
-		Map<String, Object> block = (Map<String, Object>) content.get(0);
+		Map<String, Object> result = asMap(parsed.get("result"));
+		List<Object> content = asList(result.get("content"));
+		Map<String, Object> block = asMap(content.get(0));
 		assertEquals("hi there", block.get("text"));
 	}
 
@@ -83,7 +96,7 @@ public class McpMessageHandlerTest {
 				"params", Json.object("name", "echo", "arguments", Json.array("not", "an", "object")))));
 
 		Map<String, Object> parsed = parseObject(response);
-		Map<String, Object> error = (Map<String, Object>) parsed.get("error");
+		Map<String, Object> error = asMap(parsed.get("error"));
 		assertEquals(Long.valueOf(JsonRpcException.INVALID_PARAMS), error.get("code"));
 	}
 
@@ -95,7 +108,7 @@ public class McpMessageHandlerTest {
 				"params", Json.object("name", "nope"))));
 
 		Map<String, Object> parsed = parseObject(response);
-		Map<String, Object> error = (Map<String, Object>) parsed.get("error");
+		Map<String, Object> error = asMap(parsed.get("error"));
 		assertEquals(Long.valueOf(JsonRpcException.INVALID_PARAMS), error.get("code"));
 	}
 
@@ -107,7 +120,7 @@ public class McpMessageHandlerTest {
 				.handle(Json.write(Json.object("jsonrpc", "2.0", "id", 5L, "method", "not/a/real/method")));
 
 		Map<String, Object> parsed = parseObject(response);
-		Map<String, Object> error = (Map<String, Object>) parsed.get("error");
+		Map<String, Object> error = asMap(parsed.get("error"));
 		assertEquals(Long.valueOf(JsonRpcException.METHOD_NOT_FOUND), error.get("code"));
 	}
 
@@ -118,7 +131,7 @@ public class McpMessageHandlerTest {
 		String response = handler.handle("{not json");
 
 		Map<String, Object> parsed = parseObject(response);
-		Map<String, Object> error = (Map<String, Object>) parsed.get("error");
+		Map<String, Object> error = asMap(parsed.get("error"));
 		assertEquals(Long.valueOf(JsonRpcException.PARSE_ERROR), error.get("code"));
 		assertNull(parsed.get("id"));
 	}
@@ -141,7 +154,7 @@ public class McpMessageHandlerTest {
 		String response = handler.handle(Json.write(Json.object("jsonrpc", "2.0", "id", 6L)));
 
 		Map<String, Object> parsed = parseObject(response);
-		Map<String, Object> error = (Map<String, Object>) parsed.get("error");
+		Map<String, Object> error = asMap(parsed.get("error"));
 		assertEquals(Long.valueOf(JsonRpcException.INVALID_REQUEST), error.get("code"));
 		assertTrue(((String) error.get("message")).contains("method"));
 	}

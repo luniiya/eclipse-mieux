@@ -42,6 +42,9 @@ import org.eclipse.swt.graphics.Rectangle;
  * which this theme keeps flat.
  * </p>
  */
+@SuppressWarnings("restriction") // CTabRendering is internal (not exported
+// as API) - see the class javadoc above for why subclassing it anyway is
+// the only viable way to get rounded tab corners out of the e4 CSS engine.
 public class RoundedTabRenderer extends CTabRendering {
 
 	private static final int CORNER_RADIUS = 6;

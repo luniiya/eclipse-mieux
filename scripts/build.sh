@@ -78,13 +78,40 @@ echo "==> Pre-installing eclipse-platform-parent + prereqs to the local Maven re
 mvn -f eclipse-platform-parent/pom.xml clean install -q
 mvn -f eclipse.platform.releng.prereqs.sdk/pom.xml clean install -q
 
-MVN_ARGS=(clean verify --threads 4)
+MVN_BASE_ARGS=(clean verify)
 if [[ "${WITH_TESTS}" -eq 0 ]]; then
-    MVN_ARGS+=(-DskipTests)
+    MVN_BASE_ARGS+=(-DskipTests)
 fi
 
 echo "==> Building in ${AGGREGATOR_DIR}"
 echo "    (upstream quotes ~10-20 min without tests; first run / this machine may take longer)"
-echo "==> mvn ${MVN_ARGS[*]} ${EXTRA_ARGS[*]:-}"
 
-exec mvn "${MVN_ARGS[@]}" "${EXTRA_ARGS[@]}"
+# Tycho's parallel reactor build (--threads N) has a known flaky race: one
+# thread finishes packaging a bundle's jar just as another thread (e.g.
+# validating a downstream test-bundle's classpath) opens that same jar -
+# and can catch it mid-write, reading it as an empty/truncated zip. It's a
+# build-tool scheduling bug (upstream Tycho, not our code, not javac), and
+# it doesn't reproduce reliably - so retry with less parallelism only when
+# we recognize that exact failure signature. A genuine compile/test failure
+# gets reported immediately instead, not retried into obscurity.
+BUILD_LOG="$(mktemp)"
+trap 'rm -f "${BUILD_LOG}"' EXIT
+
+is_known_parallel_race() {
+    grep -q "zip file is empty" "${BUILD_LOG}"
+}
+
+for threads in 4 2 1; do
+    echo "==> mvn ${MVN_BASE_ARGS[*]} --threads ${threads} ${EXTRA_ARGS[*]:-}"
+    if mvn "${MVN_BASE_ARGS[@]}" --threads "${threads}" "${EXTRA_ARGS[@]}" 2>&1 | tee "${BUILD_LOG}"; then
+        exit 0
+    fi
+    if ! is_known_parallel_race; then
+        echo "==> Build failed - doesn't look like the known Tycho parallel-build jar race, not retrying (see output above)." >&2
+        exit 1
+    fi
+    echo "==> Hit Tycho's known parallel-build jar race (empty zip mid-write) at --threads ${threads} - retrying with less parallelism..." >&2
+done
+
+echo "==> Still hitting the race even single-threaded - that's unexpected, see output above." >&2
+exit 1

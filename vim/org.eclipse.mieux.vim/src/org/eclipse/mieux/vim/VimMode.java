@@ -694,7 +694,7 @@ public class VimMode implements VerifyKeyListener {
 		}
 		GC gc = new GC(styledText);
 		try {
-			return Math.max(1, gc.getFontMetrics().getAverageCharWidth());
+			return Math.max(1, (int) Math.round(gc.getFontMetrics().getAverageCharacterWidth()));
 		} finally {
 			gc.dispose();
 		}

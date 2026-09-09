@@ -27,14 +27,19 @@ fi
 INSTALL_DIR="${HOME}/.local/opt/eclipse-mieux"
 BIN_LINK="${HOME}/.local/bin/eclipse-mieux"
 
-# Find the materialized product's launcher binary rather than assuming the
-# exact os/ws/arch directory layout tycho-p2-director produces. We build the
-# full "eclipse-sdk" product (JDT/PDE included), not the bare "eclipse-platform".
+# Find the materialized product's launcher binary. The build materializes
+# launchers for EVERY target platform (x86_64, aarch64, riscv64, ppc64le,
+# win32, macosx...) side by side under target/products - so we must filter
+# to this host's os/ws/arch rather than grabbing whatever a plain `find`
+# happens to list first (that previously picked up riscv64 on an x86_64
+# machine: same binary name "eclipse", wrong architecture, "cannot execute
+# binary file" at launch).
+HOST_ARCH="$(uname -m)"
 LAUNCHER="$(find "${AGGREGATOR_DIR}/products/eclipse-sdk/target/products" \
-    -type f -name eclipse -perm -u+x 2>/dev/null | head -n1)"
+    -type f -name eclipse -perm -u+x -path "*/linux/gtk/${HOST_ARCH}/*" 2>/dev/null | head -n1)"
 
 if [[ -z "${LAUNCHER}" ]]; then
-    echo "error: could not find a built 'eclipse' launcher under" >&2
+    echo "error: could not find a built linux/gtk/${HOST_ARCH} 'eclipse' launcher under" >&2
     echo "       ${AGGREGATOR_DIR}/products/eclipse-sdk/target/products" >&2
     echo "       (did the build actually finish materializing the product?)" >&2
     exit 1

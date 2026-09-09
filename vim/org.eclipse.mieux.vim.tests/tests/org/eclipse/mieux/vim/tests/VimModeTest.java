@@ -1,7 +1,6 @@
 package org.eclipse.mieux.vim.tests;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -67,6 +66,9 @@ class VimModeTest {
     }
 
     @BeforeEach
+    @SuppressWarnings("removal") // DefaultUndoManager is deprecated for
+    // removal, but it's still the only IUndoManager implementation JFace
+    // text ships - there's no replacement to migrate to yet.
     void setUp() {
         shell = new Shell(display);
         shell.setSize(800, 600);
