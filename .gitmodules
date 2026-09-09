@@ -1,0 +1,3 @@
+[submodule "vim/vrapper"]
+	path = vim/vrapper
+	url = https://github.com/vrapper/vrapper.git
