@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
-"""Keep Codex's MCP connection alive while Eclipse starts and restarts."""
+"""Keep the MCP connection alive across Eclipse restarts.
+
+Does not launch Eclipse itself - start eclipse-mieux manually first.
+"""
 
 import fcntl
 import json
 import os
 from pathlib import Path
-import subprocess
 import sys
 import time
 from urllib.error import URLError
@@ -40,7 +42,6 @@ class Gateway:
         if self.lock_file is None:
             raise OSError("Could not create an MCP gateway lock file")
         fcntl.flock(self.lock_file.fileno(), fcntl.LOCK_EX)
-        self.eclipse_process = None
 
     def close(self):
         fcntl.flock(self.lock_file.fileno(), fcntl.LOCK_UN)
@@ -76,23 +77,20 @@ class Gateway:
     def ensure_backend(self):
         if self.backend_is_ready():
             return
-        if not Path(LAUNCHER).is_file():
-            raise RuntimeError(f"Eclipse launcher is missing: {LAUNCHER}")
-        if self.eclipse_process is None or self.eclipse_process.poll() is not None:
-            if not self.eclipse_is_running():
-                self.eclipse_process = subprocess.Popen(
-                    [LAUNCHER],
-                    stdin=subprocess.DEVNULL,
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                    start_new_session=True,
-                )
-        deadline = time.monotonic() + START_TIMEOUT
-        while time.monotonic() < deadline:
-            if self.backend_is_ready():
-                return
-            time.sleep(0.25)
-        raise RuntimeError(f"Eclipse MCP backend did not become ready at {ENDPOINT}")
+        if self.eclipse_is_running():
+            # Already starting up (e.g. launched moments ago) - wait for it
+            # rather than launching a second instance.
+            deadline = time.monotonic() + START_TIMEOUT
+            while time.monotonic() < deadline:
+                if self.backend_is_ready():
+                    return
+                time.sleep(0.25)
+            raise RuntimeError(f"Eclipse MCP backend did not become ready at {ENDPOINT}")
+        raise RuntimeError(
+            f"Eclipse Mieux is not running. Start it with '{LAUNCHER}' (or run "
+            "eclipse-mieux from your launcher) and try again - the gateway no "
+            "longer starts it automatically."
+        )
 
     def run(self):
         for line in sys.stdin:

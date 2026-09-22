@@ -48,6 +48,7 @@ public final class McpUiPlugin extends AbstractUIPlugin {
 			ToolRegistry registry = new ToolRegistry();
 			UiAutomation automation = new UiAutomation();
 			UiTools.registerAll(registry, automation);
+			WorkspaceTools.registerAll(registry);
 			McpMessageHandler handler = new McpMessageHandler(registry, "eclipse-mieux", "1.0");
 			// This is a loopback-only endpoint, so keep its address stable for local
 			// MCP clients such as Codex and do not require a per-launch token.

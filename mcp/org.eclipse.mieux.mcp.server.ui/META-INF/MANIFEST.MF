@@ -9,6 +9,7 @@ Bundle-Localization: plugin
 Bundle-RequiredExecutionEnvironment: JavaSE-21
 Require-Bundle: org.eclipse.mieux.mcp.server;bundle-version="1.0.0",
  org.eclipse.core.runtime,
+ org.eclipse.core.resources,
  org.eclipse.ui,
  org.eclipse.swt
 Bundle-ActivationPolicy: lazy

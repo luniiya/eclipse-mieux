@@ -94,8 +94,10 @@ New top-level module `mcp/` (peer to `runtime/`, `debug/`, `ua/`):
   - `transport/` — a small HTTP+JSON-RPC listener bound to
     `127.0.0.1:38573/mcp` with no token; it is only the in-process backend.
     `scripts/mcp-gateway.py` is the Codex-facing stdio server: it keeps tool
-    discovery available, starts/reuses Eclipse, waits for the backend, and
-    reconnects after an IDE restart without launching duplicates.
+    discovery available and reconnects after an IDE restart. It does **not**
+    launch Eclipse itself — `eclipse-mieux` must already be running, or tool
+    calls fail with a clear "not running" error instead of silently spawning
+    an instance.
   - `ui/` — the SWT-facing part, depends on `org.eclipse.swt`,
     `org.eclipse.ui`, `org.eclipse.jface` (same cross-submodule dependency
     pattern `debug/org.eclipse.debug.ui` already uses — SWT/Workbench source

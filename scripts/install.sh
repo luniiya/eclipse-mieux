@@ -26,6 +26,7 @@ fi
 
 INSTALL_DIR="${HOME}/.local/opt/eclipse-mieux"
 BIN_LINK="${HOME}/.local/bin/eclipse-mieux"
+ECLIPSE_WORKSPACE="${ECLIPSE_WORKSPACE:-${HOME}/.local/share/eclipse-mieux/workspace}"
 
 # Find the materialized product's launcher binary. The build materializes
 # launchers for EVERY target platform (x86_64, aarch64, riscv64, ppc64le,
@@ -57,7 +58,7 @@ cp -a "${SRC_DIR}" "${INSTALL_DIR}"
 # always the same path regardless of what's been rebuilt since. See
 # CLAUDE.md's "Logs & crash diagnostics" section.
 ECLIPSE_INI="${INSTALL_DIR}/eclipse.ini"
-WORKSPACE_DIR="${HOME}/.local/share/eclipse-mieux/workspace"
+WORKSPACE_DIR="${ECLIPSE_WORKSPACE}"
 STATE_DIR="${HOME}/.local/state/eclipse-mieux"
 mkdir -p "${WORKSPACE_DIR}" "${STATE_DIR}"
 if [[ -f "${ECLIPSE_INI}" ]] && ! grep -q "osgi.logfile" "${ECLIPSE_INI}"; then
