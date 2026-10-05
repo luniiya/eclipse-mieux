@@ -90,6 +90,18 @@ Vrapper's own `org.eclipse.ui.startup` extension, with no manual setup step.
 For Vim-keybinding usage, see Vrapper's documentation:
 http://vrapper.sourceforge.net/documentation/.
 
+## Bundled extras: Marketplace + WindowBuilder
+
+The plain Eclipse SDK ships neither the Eclipse Marketplace Client nor
+WindowBuilder; normally only the EPP packages include them. Without MPC there is
+no Help > Eclipse Marketplace at all. `scripts/build.sh` pulls both from a
+pinned simultaneous-release repository (`SIMREL_REPOSITORY`, a concrete dated
+child of `releases/2026-09`) and adds them to the SDK target platform
+(`scripts/add-target-location.py`) and to `sdk.product`. The feature IDs and
+versions are in its `EXTRA_FEATURES` list. To bump them, pick a newer dated
+child of `https://download.eclipse.org/releases/<train>/` and copy the versions
+from its `content.xml.xz`.
+
 ## MCP server (agent UI automation) — planned/in progress
 
 Goal: let an AI agent drive the running IDE **as text, not pixels** — no

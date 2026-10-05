@@ -124,8 +124,49 @@ if [[ ! -f "${VRAPPER_TARGET}" ]]; then
     echo "error: expected SDK target definition is missing: ${VRAPPER_TARGET}" >&2
     exit 1
 fi
-python3 "${SCRIPT_DIR}/add-vrapper-target-location.py" \
-    "${VRAPPER_TARGET}" "${VRAPPER_REPOSITORY}" "${VRAPPER_FEATURE_VERSION}"
+python3 "${SCRIPT_DIR}/add-target-location.py" \
+    "${VRAPPER_TARGET}" eclipse_mieux_vrapper "file://$(readlink -f "${VRAPPER_REPOSITORY}")" \
+    "net.sourceforge.vrapper.feature.feature.group=${VRAPPER_FEATURE_VERSION}"
+
+# Eclipse Marketplace Client and WindowBuilder. Neither is part of the plain
+# Eclipse SDK - they normally only come with the EPP packages ("Eclipse IDE
+# for Java Developers" etc.), which is why stock SDK has no
+# Help > Eclipse Marketplace. Pull them from a pinned simultaneous-release
+# repository (a concrete dated child, not the moving releases/YYYY-MM
+# composite, so the build stays reproducible). To bump: pick the newest
+# dated child of https://download.eclipse.org/releases/<train>/ and update
+# the URL + versions from its content.xml.xz. The SDK target uses p2's slicer
+# mode (Tycho requires one mode for all locations), which doesn't follow
+# plain requirements, so WindowBuilder's third-party deps (GEF/draw2d,
+# Nebula, JGoodies, MigLayout, ...) are resolved by resolve-p2-closure.py and
+# listed explicitly. Bundles the aggregator builds from source are skipped.
+SIMREL_REPOSITORY="https://download.eclipse.org/releases/2026-09/202609091000"
+EXTRA_FEATURES=(
+    "org.eclipse.epp.mpc=1.13.1.v20260819-1736"
+    "org.eclipse.wb.core.feature=1.25.0.202608121005"
+    "org.eclipse.wb.core.ui.feature=1.25.0.202607112036"
+    "org.eclipse.wb.core.java.feature=1.25.0.202608111624"
+    "org.eclipse.wb.layout.group.feature=1.25.0.202607240412"
+    "org.eclipse.wb.swing.feature=1.25.0.202608121005"
+    "org.eclipse.wb.swt.feature=1.25.0.202607240412"
+    "org.eclipse.wb.rcp.feature=1.25.0.202608131450"
+    "org.eclipse.wb.doc.user.feature=1.25.0.202607062023"
+    "org.eclipse.wb.swing.doc.user.feature=1.25.0.202606111602"
+    "org.eclipse.wb.rcp.doc.user.feature=1.25.0.202606111602"
+)
+EXTRA_ROOTS=()
+for entry in "${EXTRA_FEATURES[@]}"; do
+    EXTRA_ROOTS+=("${entry%%=*}.feature.group=${entry#*=}")
+done
+echo "==> Resolving Marketplace/WindowBuilder dependencies from ${SIMREL_REPOSITORY}"
+mapfile -t EXTRA_UNITS < <(python3 "${SCRIPT_DIR}/resolve-p2-closure.py" \
+    "${SIMREL_REPOSITORY}" "${AGGREGATOR_DIR}" "${EXTRA_ROOTS[@]}")
+if [[ "${#EXTRA_UNITS[@]}" -eq 0 ]]; then
+    echo "error: resolving the Marketplace/WindowBuilder closure produced no units" >&2
+    exit 1
+fi
+python3 "${SCRIPT_DIR}/add-target-location.py" \
+    "${VRAPPER_TARGET}" eclipse_mieux_simrel "${SIMREL_REPOSITORY}" "${EXTRA_UNITS[@]}"
 
 # Compiling our custom bundles (theme, mcp) into the reactor is NOT
 # enough to make them show up in the running IDE - Tycho's p2-director only
@@ -157,6 +198,13 @@ if [[ -f "${SDK_PRODUCT}" ]]; then
         echo "==> Adding the local Vrapper p2 repository to ${SDK_PRODUCT}"
         sed -i "s#   </repositories>#      <repository location=\"file://${VRAPPER_REPOSITORY}\" name=\"Eclipse-mieux Vrapper\" enabled=\"true\" />\n   </repositories>#" "${SDK_PRODUCT}"
     fi
+    for entry in "${EXTRA_FEATURES[@]}"; do
+        feature_id="${entry%%=*}"
+        if ! grep -q "feature id=\"${feature_id}\"" "${SDK_PRODUCT}"; then
+            echo "==> Wiring ${feature_id} into ${SDK_PRODUCT}"
+            sed -i "s#   </features>#      <feature id=\"${feature_id}\" installMode=\"root\"/>\n   </features>#" "${SDK_PRODUCT}"
+        fi
+    done
     if ! grep -q 'plugin id="net.sourceforge.vrapper.eclipse"' "${SDK_PRODUCT}"; then
         echo "==> Enabling Vrapper startup in ${SDK_PRODUCT}"
         sed -i 's#      <plugin id="org.eclipse.core.runtime" autoStart="true" startLevel="4" />#      <plugin id="org.eclipse.core.runtime" autoStart="true" startLevel="4" />\n      <plugin id="net.sourceforge.vrapper.eclipse" autoStart="true" startLevel="4" />#' "${SDK_PRODUCT}"
